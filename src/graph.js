@@ -70,6 +70,8 @@ const CSS = `
 .hits button:hover{background:var(--trc-paper)}
 .hits .c{color:var(--trc-navy-soft);font-size:12px;flex:none}
 .count{font-size:12.5px;color:var(--trc-navy-soft)}
+.showall{font:inherit;font-size:12.5px;padding:4px 10px;border:1px solid var(--trc-rust);background:var(--trc-white);color:var(--trc-rust);border-radius:var(--trc-radius);cursor:pointer;white-space:nowrap}
+.showall:hover{background:var(--trc-rust);color:var(--trc-white)}
 .alt{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;color:var(--trc-navy);cursor:pointer;user-select:none}
 .alt input{margin:0;accent-color:var(--trc-rust)}
 .stage{position:relative;height:520px;overflow:hidden;cursor:grab;background:var(--trc-paper)}
@@ -144,6 +146,7 @@ class TrcGraph extends HTMLElement {
             <div class="hits" hidden></div>
           </div>
           <label class="alt" hidden><input type="checkbox"> <span></span></label>
+          <button class="showall" hidden>Show all</button>
           <span class="count"></span>
         </div>
         <div class="stage">
@@ -174,6 +177,8 @@ class TrcGraph extends HTMLElement {
     this.$find = this.shadowRoot.querySelector('.find input');
     this.$hits = this.shadowRoot.querySelector('.hits');
     this.$legend = this.shadowRoot.querySelector('.legend');
+    this.$showAll = this.shadowRoot.querySelector('.showall');
+    this.$showAll.addEventListener('click', () => this.clearFocus());
     this.$alt = this.shadowRoot.querySelector('.alt');
     this.$altBox = this.$alt.querySelector('input');
     this.$sr = this.shadowRoot.querySelector('.sr');
@@ -185,6 +190,10 @@ class TrcGraph extends HTMLElement {
     this.shadowRoot.querySelectorAll('[data-z]').forEach((b) =>
       b.addEventListener('click', () => this.doZoom(b.dataset.z)));
     this.$find.addEventListener('input', () => this.runFind());
+    this.$find.addEventListener('keydown', (e) => { if (e.key === 'Escape') this.clearFocus(); });
+    this.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && (this.filter || this.selected != null)) this.clearFocus();
+    });
     this.$find.addEventListener('blur', () => setTimeout(() => { this.$hits.hidden = true; }, 150));
 
     this.setupStage();
@@ -313,8 +322,8 @@ class TrcGraph extends HTMLElement {
     this.alt = false;
     this.updateCount();
     this.$hint.textContent = this.mode === 'people'
-      ? 'Every line is correspondence between two people. Scroll to zoom, drag to pan, click anyone to see their letters.'
-      : 'Subjects that appear together on the same item. Roosevelt is omitted — he connects to everything.';
+      ? 'Click anyone to focus on them and their correspondents. Search to narrow the map, “Show all” or Escape to return.'
+      : 'Subjects appearing together on the same item. Click one to focus; Roosevelt is omitted — he connects to everything.';
   }
 
   get g() { return this.data[this.mode]; }
@@ -367,6 +376,9 @@ class TrcGraph extends HTMLElement {
 
   updateCount() {
     const g = this.g;
+    // The reset only appears once there's something to reset — an always-present
+    // "Show all" on an unfiltered map is noise.
+    if (this.$showAll) this.$showAll.hidden = !(this.filter || this.selected != null);
     if (this.filter) {
       const n = this.filter.match.size;
       this.$count.textContent = `${n.toLocaleString()} match${n === 1 ? '' : 'es'} shown`;
@@ -531,19 +543,80 @@ class TrcGraph extends HTMLElement {
   }
 
   selectNode(i) {
-    this.selected = i;
-    this.applyFocus();
-    this.drawEdges();
-    this.renderPanel();
-    if (i != null) this.announce(`${this.g.nodes[i][1]}, ${(this.g.adj.get(i) || []).length} connections`);
+    // Clicking the background clears everything and returns to the full map.
+    if (i == null) { if (this.filter || this.selected != null) this.clearFocus(); return; }
+    this.focusOn(i);
   }
 
-  /** Centre and zoom on a node — used by the find box. */
-  flyTo(i, k = 3.2) {
-    const n = this.g.nodes[i];
-    const x = this.sx(n), y = this.sy(n);
-    const t = zoomIdentity.translate(this.W / 2 - x * k, this.H / 2 - y * k).scale(k);
-    select(this.$svg).transition().duration(520).call(this.zoomer.transform, t);
+  /**
+   * Frame a set of nodes so all of them are on screen.
+   *
+   * Replaces a fixed 3.2× zoom-to-centre, which was the wrong tool twice over:
+   * it cut off the very neighbourhood the reader had just selected, and the
+   * amount of surrounding graph you saw depended on nothing more meaningful than
+   * how spread out that particular cluster happened to be. Fitting the bounding
+   * box means the answer always fills the window and never overflows it.
+   */
+  fitTo(indices, duration = 480) {
+    const pts = indices.map((i) => this.g.nodes[i]).filter(Boolean);
+    if (!pts.length) return;
+
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const n of pts) {
+      const x = this.sx(n), y = this.sy(n), r = this.radius(n);
+      minX = Math.min(minX, x - r); maxX = Math.max(maxX, x + r);
+      minY = Math.min(minY, y - r); maxY = Math.max(maxY, y + r);
+    }
+
+    // Padding leaves room for labels, which sit below each node and extend
+    // sideways well past the circle itself.
+    const padX = 90, padY = 54;
+    const w = Math.max(1, maxX - minX) + padX * 2;
+    const h = Math.max(1, maxY - minY) + padY * 2;
+
+    const [kMin, kMax] = this.zoomer.scaleExtent();
+    const k = Math.max(kMin, Math.min(kMax, Math.min(this.W / w, this.H / h)));
+    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+    const t = zoomIdentity.translate(this.W / 2 - cx * k, this.H / 2 - cy * k).scale(k);
+
+    select(this.$svg).transition().duration(duration).call(this.zoomer.transform, t);
+  }
+
+  /**
+   * Select a node and frame its neighbourhood.
+   *
+   * Selecting a search result used to clear the filter and zoom to a fixed
+   * scale, which put the entire 1,592-node map back on screen at 3.2× — undoing
+   * the filtering the reader had just done. Selecting anything now narrows to
+   * that node and its strongest ties, and fits them to the window.
+   */
+  focusOn(i, { fit = true } = {}) {
+    const g = this.g;
+    const near = [i, ...(g.adj.get(i) || []).slice(0, 14).map(([o]) => o)];
+    this.filter = { match: new Set([i]), show: new Set(near) };
+    this.selected = i;
+    this.hover = null;
+    this.renderNodes();
+    this.applyFocus();
+    this.drawEdges();
+    this.updateCount();
+    this.renderPanel();
+    if (fit) this.fitTo(near.filter((n) => !this.isHidden(n)));
+    this.announce(`${g.nodes[i][1]}, showing ${near.length - 1} connections`);
+  }
+
+  /** Drop any filter and return to the whole network. */
+  clearFocus() {
+    this.filter = null;
+    this.selected = null;
+    this.$find.value = '';
+    this.$hits.hidden = true;
+    this.renderNodes();
+    this.applyFocus();
+    this.drawEdges();
+    this.updateCount();
+    this.renderPanel();
+    select(this.$svg).transition().duration(340).call(this.zoomer.transform, zoomIdentity);
   }
 
   /**
@@ -602,9 +675,7 @@ class TrcGraph extends HTMLElement {
         const i = Number(b.dataset.i);
         this.$hits.hidden = true;
         this.$find.value = '';
-        this.applyFilter(null);
-        this.selectNode(i);
-        this.flyTo(i);
+        this.focusOn(i);
       });
     });
     this.$hits.hidden = false;

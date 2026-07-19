@@ -256,6 +256,61 @@ test('searching filters the map down to matches', { skip: !ready && why }, async
   assert.equal(visible(), total, 'clearing the search should restore the whole map');
 });
 
+test('selecting keeps the focused view and fits it to the window', { skip: !ready && why }, async () => {
+  click(sr.querySelector('[data-mode=people]'));
+  await settle(700);
+  const total = sr.querySelectorAll('g.node').length;
+
+  const input = sr.querySelector('.find input');
+  input.value = 'corbin';
+  input.dispatchEvent(new win.Event('input', { bubbles: true }));
+  await settle(250);
+
+  const hit = sr.querySelector('.hits button');
+  assert.ok(hit, 'no search result to select');
+  hit.dispatchEvent(new win.MouseEvent('mousedown', { bubbles: true }));
+  await settle(900);
+
+  // The regression: selecting a result cleared the filter and zoomed to a fixed
+  // 3.2×, putting the entire map back on screen — undoing the search.
+  const visible = [...sr.querySelectorAll('g.node')]
+    .filter((n) => n.getAttribute('display') !== 'none');
+  assert.ok(visible.length < total * 0.05,
+    `selecting showed ${visible.length} of ${total} nodes — the filter was dropped`);
+  assert.ok(visible.length > 1, 'selecting should keep the neighbourhood, not just one dot');
+
+  // And everything kept must actually be within the viewport.
+  const el = sr.host ?? sr.querySelector('svg').getRootNode().host;
+  const t = el.t;
+  const off = visible.filter((n) => {
+    const m = /translate\(([-\d.]+),\s*([-\d.]+)\)/.exec(n.getAttribute('transform') || '');
+    if (!m) return false;
+    const x = t.applyX(+m[1]), y = t.applyY(+m[2]);
+    return x < -10 || x > 910 || y < -10 || y > 530;
+  });
+  assert.equal(off.length, 0, `${off.length} selected nodes sit outside the visible area`);
+});
+
+test('a hub selection still fits — neighbours are capped', { skip: !ready && why }, async () => {
+  const el = sr.querySelector('svg').getRootNode().host;
+  el.focusOn(graphs.people.root);   // Roosevelt: 1,503 connections
+  await settle(900);
+  const visible = [...sr.querySelectorAll('g.node')]
+    .filter((n) => n.getAttribute('display') !== 'none').length;
+  assert.ok(visible < 40, `selecting Roosevelt showed ${visible} nodes — neighbours are uncapped`);
+});
+
+test('Show all restores the whole network', { skip: !ready && why }, async () => {
+  const button = sr.querySelector('.showall');
+  assert.ok(button && !button.hidden, '"Show all" should appear once something is selected');
+  click(button);
+  await settle(600);
+  const visible = [...sr.querySelectorAll('g.node')]
+    .filter((n) => n.getAttribute('display') !== 'none').length;
+  assert.equal(visible, graphs.people.nodes.length, 'reset did not restore every node');
+  assert.ok(sr.querySelector('.showall').hidden, '"Show all" should hide again once nothing is filtered');
+});
+
 test('the isolated group is named rather than disguised as a community', { skip: !ready && why }, () => {
   // 747 people correspond only with Roosevelt. They share no relationships, so
   // labelling them by their largest member would invent a community. They get a
