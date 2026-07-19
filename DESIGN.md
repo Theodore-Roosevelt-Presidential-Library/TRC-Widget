@@ -146,6 +146,37 @@ rather than "Telegram · 6,558", and doesn't offer Diary at all.
 Fails soft: if the scan errors (their API 502s often), suggestions fall back to
 unfiltered. Degraded refinement, never a broken box.
 
+## One filter per facet — a destination constraint
+
+Found by testing: adding Subject "North Dakota" (236 items) then Subject
+"Thank-you notes" (7,266) produced 7,266 — the second filter had silently
+replaced the first, while the UI showed both chips.
+
+The cause isn't ours to fix. **The TRC search form accepts one value per
+parameter**, and every path to expressing two is broken:
+
+| Attempt | Result |
+|---|---|
+| `?subject=north-dakota&subject=thank-you-notes` | 7,266 — PHP keeps the last value, first is dropped |
+| `?subject=north-dakota,thank-you-notes` | 139,714 — read as one literal term, matched nothing, fell back to everything |
+| REST `dl_subject[terms][]=…&dl_subject[relation]=AND` | HTTP 400 `rest_invalid_param` — their WP predates the syntax |
+| REST `dl_subject=258706,256841` | Works, but means **OR**, not AND |
+
+There is no combination of two same-facet terms their site will honour as an
+intersection. Since results open there, the widget can only offer filters the
+destination can actually apply.
+
+**So: selecting a second term in a facet replaces the first.** The suggestion is
+labelled `replaces` before the click, and a note confirms the swap after. Filters
+across different facets still AND together normally, which is verified.
+
+`filterQuery()` now uses `set()` rather than `append()`, making a repeated
+parameter structurally impossible rather than a thing to remember.
+
+If the TRC ever adds multi-value facets, this becomes a one-line change — but
+shipping the illusion of multi-select over a destination that ignores it would
+be worse than the limitation itself.
+
 ## Widget roadmap
 
 | Widget | Data needed | Status |

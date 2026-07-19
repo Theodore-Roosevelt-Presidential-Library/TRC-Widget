@@ -161,6 +161,45 @@ console.log('\nCo-occurrence filtering — no dead ends');
         plain.some((t) => t.id === DIARY), 'baseline search regressed');
 }
 
+console.log('\nOne filter per facet (destination constraint)');
+{
+  // Their search form keeps only the last value of a repeated parameter, and
+  // reads a comma-joined value as a single literal term. Both verified live:
+  //   ?subject=north-dakota&subject=thank-you-notes -> 7,266 (North Dakota dropped)
+  //   ?subject=north-dakota,thank-you-notes         -> 139,714 (matched nothing)
+  // So the widget must never emit two values for one parameter.
+  const nd = index.find((t) => t.f === 'sb' && t.name === 'North Dakota');
+  const ty = index.find((t) => t.f === 'sb' && t.name === 'Thank-you notes');
+  check('both test subjects are present in the head index',
+        !!nd && !!ty, `North Dakota=${!!nd} Thank-you notes=${!!ty}`);
+
+  // Simulate pick() twice in the same facet.
+  let chips = [];
+  const pick = (t) => {
+    const i = chips.findIndex((c) => c.f === t.f);
+    if (i > -1) chips.splice(i, 1);
+    chips.push(t);
+  };
+  pick(nd); pick(ty);
+  check(`selecting two subjects keeps one (${chips.length}) → ${chips[0]?.name}`,
+        chips.length === 1 && chips[0].name === 'Thank-you notes',
+        `got ${chips.map((c) => c.name).join(' + ')}`);
+
+  // Across different facets, both must survive.
+  const letter = index.find((t) => t.f === 'rt' && t.name === 'Letter');
+  pick(letter);
+  check(`different facets coexist (${chips.length}) → ${chips.map((c) => c.name).join(' + ')}`,
+        chips.length === 2, 'cross-facet filters were wrongly collapsed');
+
+  // The emitted URL must have exactly one value per parameter.
+  const p = new URLSearchParams();
+  for (const c of chips) p.set(head.facets[c.f].param, c.value);
+  const qs = p.toString();
+  const dupes = [...p.keys()].length !== new Set(p.keys()).size;
+  check(`URL carries one value per param → ?${qs}`, !dupes && !qs.includes('%2C'),
+        'duplicate or comma-joined parameter would be silently dropped by their form');
+}
+
 console.log('\nNo empty search keys');
 {
   const bad = index.filter((t) => !t.k || t.k.length < 2);

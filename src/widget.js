@@ -95,6 +95,8 @@ input::placeholder{color:#767676}
 .go:hover{text-decoration:underline}
 .go svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2}
 .err{font-size:13px;color:#767676;margin-top:8px}
+.flash{font-size:13px;color:#5a2f00;background:#f6efe6;border-radius:6px;padding:6px 10px;margin-top:8px}
+.swap{font-size:11px;color:#8a5a1e;text-transform:uppercase;letter-spacing:.04em;flex:none}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 @media(prefers-color-scheme:dark){
  :host{color:#ececec}
@@ -152,6 +154,7 @@ class TrcSearch extends HTMLElement {
                  autocomplete="off" spellcheck="false" placeholder="${esc(ph)}">
         </div>
         <div class="chips" role="list"></div>
+        <div class="flash" hidden></div>
         <div class="sugg" role="listbox" hidden></div>
         <div class="pv"></div>
         <p class="sr" role="status" aria-live="polite"></p>
@@ -163,6 +166,7 @@ class TrcSearch extends HTMLElement {
     this.$in = this.shadowRoot.querySelector('input');
     this.$sugg = this.shadowRoot.querySelector('.sugg');
     this.$chips = this.shadowRoot.querySelector('.chips');
+    this.$flash = this.shadowRoot.querySelector('.flash');
     this.$pv = this.shadowRoot.querySelector('.pv');
     this.$sr = this.shadowRoot.querySelector('.sr');
 
@@ -266,7 +270,9 @@ class TrcSearch extends HTMLElement {
         ${svg(ICON[t.f] || ICON.sb)}
         <span class="nm">${nm}</span>
         <span class="fc">${esc(this.facets?.[t.f]?.label || '')}</span>
-        <span class="ct">${t.count == null ? '·' : t.count.toLocaleString()}</span>
+        ${this.chips.some((c) => c.f === t.f)
+          ? '<span class="swap">replaces</span>'
+          : `<span class="ct">${t.count == null ? '·' : t.count.toLocaleString()}</span>`}
       </button>`;
     }).join('');
 
@@ -304,12 +310,36 @@ class TrcSearch extends HTMLElement {
   pick(i) {
     const t = this.matches[i];
     if (!t) return;
+
+    // One filter per facet — enforced by the destination, not by preference.
+    //
+    // The TRC search form takes a single value per parameter. Passing two
+    // subjects as ?subject=a&subject=b silently keeps only the last (verified:
+    // North Dakota + Thank-you notes returned 7,266 — the Thank-you notes total,
+    // with North Dakota dropped). Comma-joining is worse: their form reads it as
+    // one nonsense term and falls back to all 139,714 results.
+    //
+    // Their WordPress also rejects the REST AND-relation syntax, and a
+    // comma-separated term list means OR, not AND. So there is no combination
+    // of two same-facet terms we could offer that their site would honour.
+    // Replacing is the only option that keeps the preview and the destination
+    // telling the same story.
+    const prev = this.chips.findIndex((c) => c.f === t.f);
+    const replaced = prev > -1 ? this.chips[prev] : null;
+    if (replaced) this.chips.splice(prev, 1);
+
     this.chips.push(t);
     this.$in.value = '';
     this.close();
     this.sync();
     this.$in.focus();
-    this.dispatchEvent(new CustomEvent('trc-filter', { bubbles: true, detail: { filters: this.chips.map((c) => ({ facet: this.facets?.[c.f]?.label, name: c.name })), url: this.url() } }));
+
+    const label = this.facets?.[t.f]?.label || 'filter';
+    this.flash(replaced
+      ? `${label} changed to ${t.name} — replaced ${replaced.name}`
+      : `Added ${label}: ${t.name}`);
+
+    this.dispatchEvent(new CustomEvent('trc-filter', { bubbles: true, detail: { filters: this.chips.map((c) => ({ facet: this.facets?.[c.f]?.label, name: c.name })), url: this.url(), replaced: replaced ? replaced.name : null } }));
   }
 
   sync() {
@@ -319,12 +349,20 @@ class TrcSearch extends HTMLElement {
     this.scanCooccurrence();
   }
 
-  /** Query string identifying the current filter set, for REST calls and caching. */
+  /**
+   * Query string identifying the current filter set, for REST calls and caching.
+   *
+   * Uses set(), never append(). Appending produced ?dl_subject=a&dl_subject=b,
+   * which PHP collapses to the last value — the filter silently vanished and the
+   * count shown was for one term while the user believed they had applied two.
+   * With one chip per facet this can't arise, but set() makes that structural
+   * rather than a thing to remember.
+   */
   filterQuery() {
     const p = new URLSearchParams();
     for (const c of this.chips) {
       const tax = REST_TAX[c.f];
-      if (tax && c.id) p.append(tax, c.id);
+      if (tax && c.id) p.set(tax, c.id);
     }
     return p;
   }
@@ -480,6 +518,16 @@ class TrcSearch extends HTMLElement {
   }
 
   announce(msg) { this.$sr.textContent = msg; }
+
+  /** Brief visible + screen-reader note. Used when a filter silently replaces another. */
+  flash(msg) {
+    this.announce(msg);
+    if (!/replaced/.test(msg)) { this.$flash.hidden = true; return; }
+    this.$flash.textContent = msg;
+    this.$flash.hidden = false;
+    clearTimeout(this._flashT);
+    this._flashT = setTimeout(() => { this.$flash.hidden = true; }, 4000);
+  }
   open() { this.$sugg.hidden = false; this.$in.setAttribute('aria-expanded', 'true'); }
   close() { this.$sugg.hidden = true; this.$in.setAttribute('aria-expanded', 'false'); this.$in.removeAttribute('aria-activedescendant'); this.cursor = -1; }
 }
