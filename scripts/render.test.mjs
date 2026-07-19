@@ -347,6 +347,46 @@ test('an ordinary node does not repeat what the map already shows', { skip: !rea
     'peer list should only appear when the map is hiding connections');
 });
 
+test('a focused view names every node it shows', { skip: !ready && why }, async () => {
+  // Context nodes were left as anonymous dots, which defeats the purpose:
+  // selecting someone asks *who* they corresponded with, and an unlabelled
+  // circle can't answer that.
+  const el = sr.querySelector('svg').getRootNode().host;
+  const lodge = graphs.people.nodes.findIndex((n) => /^Lodge, Henry Cabot/.test(n[1]));
+  el.focusOn(lodge);
+  await settle(700);
+
+  const visible = [...sr.querySelectorAll('g.node')]
+    .filter((n) => n.getAttribute('display') !== 'none');
+  const named = visible.filter((n) => n.querySelector('text').getAttribute('display') !== 'none');
+  assert.equal(named.length, visible.length,
+    `${visible.length - named.length} of ${visible.length} focused nodes are unlabelled dots`);
+});
+
+test('people who share a name are told apart', { skip: !ready && why }, () => {
+  // Theodore Roosevelt, his father and his son all trim to "Roosevelt,
+  // Theodore" once life dates are dropped, so a focused map appeared to show
+  // the same man twice. Colliding names keep their birth year.
+  const el = sr.querySelector('svg').getRootNode().host;
+  const labels = el.data.people.label;
+  const trs = graphs.people.nodes
+    .map((n, i) => [n[1], labels[i]])
+    .filter(([raw]) => /^Roosevelt, Theodore/.test(raw));
+  assert.ok(trs.length >= 3, 'expected several Theodore Roosevelts in the data');
+  const rendered = trs.map(([, l]) => l);
+  assert.equal(new Set(rendered).size, rendered.length,
+    `distinct people render identically: ${rendered.join(' | ')}`);
+
+  // Joint authority records ("X; Y") name the first and count the rest, rather
+  // than overflowing into an ellipsis that looks like a truncated duplicate.
+  const joint = graphs.people.nodes
+    .map((n, i) => [n[1], labels[i]])
+    .filter(([raw]) => raw.includes(';'));
+  for (const [, label] of joint) {
+    assert.match(label, /\+ \d+$/, `joint record should be summarised, got "${label}"`);
+  }
+});
+
 test('the isolated group is named rather than disguised as a community', { skip: !ready && why }, () => {
   // 747 people correspond only with Roosevelt. They share no relationships, so
   // labelling them by their largest member would invent a community. They get a

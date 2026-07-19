@@ -86,8 +86,8 @@ svg{touch-action:none}
 .node:focus{outline:none}
 .node:focus circle{stroke:var(--trc-rust);stroke-width:2.5}
 .faded{opacity:.12}
-.ctx circle{opacity:.3}
-.ctx text{display:none}
+.ctx circle{opacity:.55}
+.ctx text{opacity:.8}
 .panel{padding:11px 13px;border-top:1px solid var(--trc-line);background:var(--trc-white);font-size:13px}
 .panel h3{margin:0 0 3px;font-family:var(--trc-head);font-size:16px;font-weight:700}
 .panel .m{color:var(--trc-navy-soft);margin-bottom:8px}
@@ -120,10 +120,88 @@ svg{touch-action:none}
 }
 `;
 
-const shortName = (n) => {
-  const s = String(n).replace(/,\s*\d{3,4}\s*-\s*\d{0,4}\s*$/, '').replace(/\s*\([^)]*\)/, '');
-  return s.length > 26 ? `${s.slice(0, 25)}…` : s;
+/**
+ * Trim a Library of Congress authority name down to something labelable.
+ *
+ * Life dates and parenthetical expansions are dropped, because
+ * "Roosevelt, Theodore, 1858-1919" is too long to sit under a 6px dot.
+ */
+const MAX_LABEL = 26;
+
+const trimOne = (s) =>
+  s.replace(/,\s*\d{3,4}\s*-\s*\d{0,4}\s*$/, '').replace(/\s*\([^)]*\)/, '').trim();
+
+/**
+ * Split an authority name into its base and any disambiguating suffix.
+ *
+ * A few records name two people jointly — "Roosevelt, Theodore, 1858-1919;
+ * Roosevelt, Edith Kermit Carow, 1861-1948" for letters they signed together.
+ * Naming the first and counting the rest keeps them short, but the suffix has to
+ * survive truncation: clipping the finished string turned "Ferguson, Robert
+ * Harry Munro + 1" into "Ferguson, Robert Harry Mu…", which is exactly the
+ * truncated-looking duplicate the suffix exists to prevent.
+ */
+const trimName = (n) => {
+  const parts = String(n).split(';').map((p) => p.trim()).filter(Boolean);
+  return { base: trimOne(parts[0] ?? ''), suffix: parts.length > 1 ? ` + ${parts.length - 1}` : '' };
 };
+
+/** Clip the base to fit, never the suffix. */
+const clip = (base, suffix = '') => {
+  const room = MAX_LABEL - suffix.length;
+  return (base.length > room ? `${base.slice(0, Math.max(1, room - 1))}…` : base) + suffix;
+};
+
+const shortName = (n) => { const { base, suffix } = trimName(n); return clip(base, suffix); };
+
+/**
+ * Label names, disambiguating people who share one.
+ *
+ * Dropping life dates made three different men — Theodore Roosevelt, his father
+ * and his son — all render as "Roosevelt, Theodore", so a focused map appeared
+ * to show the same person twice. The dates are the only thing distinguishing
+ * them, so where a trimmed name collides with another, the birth year comes
+ * back. Unique names stay clean.
+ */
+function buildLabels(nodes) {
+  const parsed = nodes.map((n) => trimName(n[1]));
+  const seen = new Map();
+  for (const { base, suffix } of parsed) {
+    const k = base + suffix;
+    seen.set(k, (seen.get(k) || 0) + 1);
+  }
+  const labels = nodes.map((n, i) => {
+    const { base, suffix } = parsed[i];
+    if (seen.get(base + suffix) === 1) return clip(base, suffix);
+    const born = /(\d{3,4})\s*-/.exec(n[1]);
+    const tag = born ? ` (${born[1]})${suffix}` : suffix;
+    return clip(base, tag);
+  });
+
+  // Second pass: collisions created by truncation rather than by the names.
+  //
+  // "United States. Department of State" and "United States. Department of
+  // Commerce" differ well past the 26-character budget, so both clip to
+  // "United States. Department…". Distinct entries that render identically are
+  // worse than long ones, so colliding labels are allowed to run longer until
+  // they separate.
+  const count = new Map();
+  for (const l of labels) count.set(l, (count.get(l) || 0) + 1);
+
+  return labels.map((l, i) => {
+    if (count.get(l) === 1) return l;
+    const { base, suffix } = parsed[i];
+    for (const room of [40, 56]) {
+      const longer = base.length > room - suffix.length
+        ? `${base.slice(0, room - suffix.length - 1)}…${suffix}`
+        : base + suffix;
+      if (labels.filter((_, j) => j !== i).every((other) => other !== longer)) return longer;
+    }
+    // Truly identical records exist in the source data — see the duplicate
+    // authority entries noted in DESIGN.md. Nothing to disambiguate with.
+    return l;
+  });
+}
 const norm = (s) => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -297,6 +375,7 @@ class TrcGraph extends HTMLElement {
         d.y2i = d.fields.nodes.indexOf('y2');
         d.ci = d.fields.nodes.indexOf('cluster');
         d.key = d.nodes.map((n) => norm(n[1]));
+        d.label = buildLabels(d.nodes);
         this.data[mode] = d;
       } catch (err) {
         this.$hint.hidden = true;
@@ -488,7 +567,7 @@ class TrcGraph extends HTMLElement {
       .attr('fill', (i) => this.colourOf(i));
     this.nodeSel.select('text')
       .attr('y', (i) => this.radius(g.nodes[i]) + 11)
-      .text((i) => shortName(g.nodes[i][1]));
+      .text((i) => g.label[i]);
   }
 
   /**
@@ -521,8 +600,18 @@ class TrcGraph extends HTMLElement {
     }
 
     this.nodeSel.select('text').attr('display', (i) => {
-      // While filtering, name every match — the set is small by construction.
-      if (this.filter) return this.filter.match.has(i) ? null : 'none';
+      if (this.filter) {
+        // Name everything on screen while focused.
+        //
+        // Context nodes were previously left as anonymous dots, which defeats
+        // the point: selecting someone is a question about *who* they
+        // corresponded with, and an unlabelled circle can't answer it. The
+        // filtered set is capped at ~15 nodes, so there is room to name them
+        // all. Only when a broad search leaves too many on screen does this
+        // fall back to naming the matches alone.
+        if (this.filter.show.size <= 45) return this.filter.show.has(i) ? null : 'none';
+        return this.filter.match.has(i) ? null : 'none';
+      }
       if (near.has(i)) return null;
       // Otherwise label by on-screen prominence, so hubs are named at any zoom
       // and smaller names surface as the reader moves in.
@@ -768,7 +857,7 @@ class TrcGraph extends HTMLElement {
     const hidden = links.length - shown;
     const topList = hidden > 0
       ? links.slice(0, 10).map(([o, w]) =>
-          `<button class="peer" data-go="${o}">${esc(shortName(this.g.nodes[o][1]))}<span>${w.toLocaleString()}</span></button>`).join('')
+          `<button class="peer" data-go="${o}">${esc(this.g.label[o])}<span>${w.toLocaleString()}</span></button>`).join('')
       : '';
 
     this.$panel.hidden = false;
@@ -817,7 +906,7 @@ class TrcGraph extends HTMLElement {
       .sort((a, b) => (size.get(b[0]) || 0) - (size.get(a[0]) || 0))
       .slice(0, 5)
       .map(([c, i]) =>
-        `<span><i style="background:${PALETTE[c % PALETTE.length]}"></i>${esc(shortName(g.nodes[i][1]))}</span>`);
+        `<span><i style="background:${PALETTE[c % PALETTE.length]}"></i>${esc(g.label[i])}</span>`);
 
     // Named explicitly rather than by its largest member: "Burroughs" would
     // suggest a community around him, when in fact none of these people are

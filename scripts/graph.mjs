@@ -410,7 +410,19 @@ async function main() {
   // Lodge-as-reader would be two unconnected dots.
   const nameToId = new Map();   // canonical name -> representative creator-side id
   const personTerms = new Map();
-  const canon = (m, id) => m.get(id)?.name;
+  /**
+   * Canonical person key.
+   *
+   * Whitespace-normalised because the source data contains records that differ
+   * only by a trailing space — "Stevens, John F. (John Frank), 1853-1943" and
+   * the same string with a space on the end are two term IDs with the same slug,
+   * splitting one man's 67 items into 34 and 33. They deep-link to the same
+   * search, so treating them as one person is both safe and more truthful.
+   */
+  const canon = (m, id) => {
+    const n = m.get(id)?.name;
+    return n ? n.replace(/\s+/g, ' ').trim() : undefined;
+  };
 
   // Item counts are tallied during the scan rather than taken from either
   // taxonomy.
@@ -431,7 +443,7 @@ async function main() {
     if (!nameToId.has(name)) {
       nameToId.set(name, id);
       const t = map.get(id);
-      personTerms.set(id, { name: t.name, slug: t.slug, count: 0 });
+      personTerms.set(id, { name: name, slug: t.slug, count: 0 });
     }
     return nameToId.get(name);
   };

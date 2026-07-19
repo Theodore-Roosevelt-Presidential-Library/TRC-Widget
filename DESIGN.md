@@ -253,6 +253,30 @@ node whose ties are mostly hidden now lists its heaviest by name and count —
 Taft 977, Lodge 903, Cowles 864 — each one a link deeper into the map. The worst
 case for the visualisation became the most informative panel in it.
 
+## Data quality issues found in the source
+
+Building the map surfaced problems in the TRC's own authority records. Worth
+passing back to them — the widget works around each, but the archive's own search
+has the same splits.
+
+**Duplicate authority records.** `Stevens, John F. (John Frank), 1853-1943` exists
+twice, differing only by a trailing space, with the same slug. It split one man's
+67 items into 34 and 33. The graph builder now normalises whitespace when keying
+people, which merges them.
+
+**Split subject terms.** `United States. Post Office Department` and
+`United States. Post Office Dept.` are separate subjects co-occurring 645 times —
+one collection cut in half by an abbreviation.
+
+**HTML-encoded names.** 388 terms arrived as `Underwood &amp; Underwood`. Fixed on
+our side by decoding, but they're encoded in their data.
+
+**Names that are correct and look wrong.** Not every collision is an error:
+`Roosevelt, Theodore, 1858-1919`, `1887-1944` and `1831-1878` are TR, his son and
+his father, correctly distinguished by life dates. Stripping those dates for
+display made three men render as one name — our bug, not theirs, and the reason
+labels now restore the birth year whenever a name would otherwise collide.
+
 ## Widget roadmap
 
 | Widget | Data needed | Status |
