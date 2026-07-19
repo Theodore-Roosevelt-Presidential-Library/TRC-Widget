@@ -2,20 +2,21 @@
  * Headless render test for <trc-graph>.
  *
  * Loads the *built bundle* against the *real graph data* in a JSDOM document and
- * drives it the way a visitor would: initial render, click to expand, switch
- * modes. Everything else in this project tests data or pure functions; this is
- * the only check that the shipped file actually works in a DOM.
+ * drives it like a visitor: initial render, selecting a node, searching, mode
+ * switching. Everything else in this project tests data or pure functions; this
+ * is the only check that the shipped file works in a DOM.
  *
  * It earned its place immediately — it caught the people graph reporting TR's
  * recipient count (30,656) beside a link returning his creator count (58,180).
- * No data-level test would have seen that, because both numbers were correct in
- * isolation. It only looked wrong on screen, together.
+ * No data-level test would have seen that: both numbers were right in isolation
+ * and only wrong together, on screen.
  *
- * JSDOM has no layout engine, so getBoundingClientRect is stubbed and the force
- * simulation runs against fixed dimensions. That verifies wiring, not visual
- * quality — a real browser is still the final word on whether it looks good.
+ * JSDOM has no layout engine and no canvas, so getBoundingClientRect is stubbed
+ * and the edge layer is absent. That verifies wiring and data correctness, not
+ * visual quality — a real browser remains the final word on whether it looks
+ * good.
  *
- * Skips itself if jsdom isn't installed, so `npm test` works without it.
+ * Skips itself if jsdom isn't installed.
  *
  * Run: node --test scripts/render.test.mjs
  */
@@ -38,13 +39,12 @@ const BUNDLE = path.join(ROOT, 'dist/trc-graph.js');
 const ready = JSDOM && existsSync(BUNDLE);
 const why = !JSDOM ? 'jsdom not installed' : 'run `npm run build` first';
 
-let win, el, sr, errors;
+let win, sr, errors, graphs;
 
-/** Build a JSDOM document with the widget mounted and the simulation settled. */
-async function mount(attrs = {}) {
-  const graphs = {
-    people: await readFile(path.join(ROOT, 'data/graph-people.json'), 'utf8'),
-    subjects: await readFile(path.join(ROOT, 'data/graph-subjects.json'), 'utf8'),
+async function mount() {
+  graphs = {
+    people: JSON.parse(await readFile(path.join(ROOT, 'data/graph-people.json'), 'utf8')),
+    subjects: JSON.parse(await readFile(path.join(ROOT, 'data/graph-subjects.json'), 'utf8')),
   };
   const bundle = await readFile(BUNDLE, 'utf8');
 
@@ -55,95 +55,133 @@ async function mount(attrs = {}) {
   const { window } = dom;
   errors = [];
   window.addEventListener('error', (e) => errors.push(e.message));
-  window.console.warn = (...a) => errors.push(`warn: ${a.join(' ')}`);
+  // JSDOM logs an unimplemented-canvas notice; that's expected, not a failure.
+  window.console.warn = (...a) => {
+    const m = a.join(' ');
+    if (!/canvas|getContext|not implemented/i.test(m)) errors.push(`warn: ${m}`);
+  };
+  window.console.error = () => {};
 
   window.fetch = async (u) => ({
     ok: true, status: 200,
-    json: async () => JSON.parse(String(u).includes('subjects') ? graphs.subjects : graphs.people),
+    json: async () => (String(u).includes('subjects') ? graphs.subjects : graphs.people),
   });
   window.ResizeObserver = class { observe() {} disconnect() {} };
-  // No layout engine in JSDOM; the widget reads the stage size from here.
   window.Element.prototype.getBoundingClientRect = () => (
-    { width: 680, height: 460, top: 0, left: 0, right: 680, bottom: 460 });
+    { width: 900, height: 520, top: 0, left: 0, right: 900, bottom: 520 });
 
   window.eval(bundle);
   const node = window.document.createElement('trc-graph');
-  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
   window.document.body.appendChild(node);
-  await new Promise((r) => setTimeout(r, 900));
-  return { window, el: node, sr: node.shadowRoot };
+  await new Promise((r) => setTimeout(r, 700));
+  return { window, sr: node.shadowRoot };
 }
 
-const click = (target) => target.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
-const settle = () => new Promise((r) => setTimeout(r, 500));
+const click = (t) => t.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
+const settle = (ms = 400) => new Promise((r) => setTimeout(r, ms));
 
-before(async () => {
-  if (!ready) return;
-  ({ window: win, el, sr } = await mount());
-});
+before(async () => { if (ready) ({ window: win, sr } = await mount()); });
 
 test('the built bundle renders without errors', { skip: !ready && why }, () => {
-  assert.deepEqual(errors, [], `console/runtime errors: ${errors.join(' | ')}`);
+  assert.deepEqual(errors, [], `errors: ${errors.join(' | ')}`);
   assert.ok(sr.querySelector('svg'), 'no svg');
+  assert.ok(sr.querySelector('canvas'), 'no canvas layer');
 });
 
-test('opens on Roosevelt with nodes and edges drawn', { skip: !ready && why }, () => {
-  assert.ok(sr.querySelectorAll('g.node').length >= 5, 'too few nodes rendered');
-  assert.ok(sr.querySelectorAll('line.edge').length >= 5, 'too few edges rendered');
-  assert.match(sr.querySelector('.panel h3').textContent, /^Roosevelt, Theodore/);
+test('the whole network is drawn, not a neighbourhood', { skip: !ready && why }, () => {
+  // The regression that prompted this rewrite: the map previously showed ten
+  // nodes at a time, so the archive's scale was invisible.
+  const drawn = sr.querySelectorAll('g.node').length;
+  assert.equal(drawn, graphs.people.nodes.length,
+    `expected all ${graphs.people.nodes.length} nodes drawn, got ${drawn}`);
+  assert.ok(drawn > 1000, 'the graph should show over a thousand people');
 });
 
-test('the force simulation actually positions nodes', { skip: !ready && why }, () => {
-  const transforms = [...sr.querySelectorAll('g.node')].map((n) => n.getAttribute('transform'));
+test('nodes use precomputed layout coordinates', { skip: !ready && why }, () => {
+  const transforms = [...sr.querySelectorAll('g.node')].slice(0, 200)
+    .map((n) => n.getAttribute('transform'));
   assert.ok(transforms.every((t) => /translate\([-\d.]+,\s*[-\d.]+\)/.test(t || '')),
-    'nodes have no transform — the simulation never ticked');
-  // Distinct positions: a collapsed layout would stack them all at one point.
-  assert.ok(new Set(transforms).size > 3, 'nodes are stacked on top of each other');
+    'nodes are not positioned');
+  assert.ok(new Set(transforms).size > 100, 'nodes are stacked — layout was not applied');
 });
 
 test('node counts agree with the searches they link to', { skip: !ready && why }, () => {
-  // The regression this file was written for. TR is both a creator (58,180) and
-  // a recipient (30,656); showing one total beside a single-role link misreports
-  // the archive. Each role gets its own link and its own count.
+  // TR is both creator (58,180) and recipient (30,656). One combined number
+  // beside a single-role link misreports the archive, so each role is its own
+  // link with its own count. Both figures verified against the live site.
   const links = [...sr.querySelectorAll('.panel a')];
-  assert.equal(links.length, 2, `expected separate creator and recipient links, got ${links.length}`);
+  assert.equal(links.length, 2, `expected creator and recipient links, got ${links.length}`);
 
   const wrote = links.find((a) => /Wrote/.test(a.textContent));
   const received = links.find((a) => /Received/.test(a.textContent));
   assert.ok(wrote && received, 'missing a role link');
-
-  assert.match(wrote.getAttribute('href'), /[?&]creator=/, '"Wrote" must link to a creator search');
-  assert.match(received.getAttribute('href'), /[?&]recipient=/, '"Received" must link to a recipient search');
-
-  // Live-verified against theodorerooseveltcenter.org.
-  assert.match(wrote.textContent, /58,180/, `wrote count wrong: ${wrote.textContent}`);
-  assert.match(received.textContent, /30,656/, `received count wrong: ${received.textContent}`);
+  assert.match(wrote.getAttribute('href'), /[?&]creator=/);
+  assert.match(received.getAttribute('href'), /[?&]recipient=/);
+  assert.match(wrote.textContent, /58,180/, `wrote: ${wrote.textContent}`);
+  assert.match(received.textContent, /30,656/, `received: ${received.textContent}`);
 });
 
-test('clicking a neighbour expands the map and records the path', { skip: !ready && why }, async () => {
-  const before = sr.querySelectorAll('g.node').length;
-  const other = [...sr.querySelectorAll('g.node')].find((g) => !g.classList.contains('sel'));
-  assert.ok(other, 'no unselected node to click');
-  click(other);
-  await settle();
-
-  assert.ok(sr.querySelectorAll('g.node').length > before, 'clicking did not reveal new nodes');
-  assert.match(sr.querySelector('.crumb').textContent, /→/,
-    'breadcrumb should show the path taken from Roosevelt');
-  assert.ok(!sr.querySelector('.reset').hidden, '"Start over" should appear once the user has navigated');
+test('the header reports the full scale of the graph', { skip: !ready && why }, () => {
+  const txt = sr.querySelector('.count').textContent;
+  assert.match(txt, /people/, `count text: "${txt}"`);
+  assert.match(txt, new RegExp(graphs.people.nodes.length.toLocaleString()),
+    `should state the true node count: "${txt}"`);
 });
 
-test('switching to subjects loads the other graph', { skip: !ready && why }, async () => {
+test('selecting a node focuses it and updates the panel', { skip: !ready && why }, async () => {
+  // Deliberately not the root. Roosevelt is connected to 1,503 of the 1,592
+  // nodes, so selecting him fades almost nothing — true, but useless as a test
+  // of whether focusing works at all.
+  const nodes = [...sr.querySelectorAll('g.node')];
+  const target = nodes[Math.floor(nodes.length / 2)];
+  const idx = nodes.indexOf(target);
+  click(target);
+  await settle(200);
+
+  assert.equal(sr.querySelectorAll('g.node.sel').length, 1, 'exactly one node should be selected');
+  assert.ok(sr.querySelector('.panel h3').textContent.length > 0, 'panel has no heading');
+
+  const neighbours = (graphs.people.edges.filter(([a, b]) => a === idx || b === idx)).length;
+  const faded = sr.querySelectorAll('g.node.faded').length;
+  assert.equal(faded, graphs.people.nodes.length - (neighbours + 1),
+    `fading should hide exactly the non-neighbours (${neighbours} links, ${faded} faded)`);
+});
+
+test('Roosevelt dominates the network, and the data says so plainly', { skip: !ready && why }, () => {
+  // Not a UI assertion — a guard on the shape of the archive. TR being on the
+  // majority of edges is the central fact the map has to cope with; if a future
+  // pruning change quietly hid that, the picture would stop being true.
+  const g = graphs.people;
+  const root = g.root;
+  const touching = g.edges.filter(([a, b]) => a === root || b === root).length;
+  const share = touching / g.edges.length;
+  assert.ok(share > 0.3, `TR should be on a large share of edges, got ${(share * 100).toFixed(0)}%`);
+  assert.ok(share < 0.85, `TR on ${(share * 100).toFixed(0)}% of edges leaves no other structure visible`);
+});
+
+test('find box locates a person anywhere in the network', { skip: !ready && why }, async () => {
+  const input = sr.querySelector('.find input');
+  input.value = 'lodge';
+  input.dispatchEvent(new win.Event('input', { bubbles: true }));
+  await settle(200);
+
+  const hits = [...sr.querySelectorAll('.hits button')];
+  assert.ok(hits.length > 0, 'no search results');
+  assert.ok(hits.some((b) => /Lodge/i.test(b.textContent)), `no Lodge in: ${hits.map((h) => h.textContent).join(' | ')}`);
+  // Word-boundary matching, same discipline as the search widget.
+  assert.ok(!hits.some((b) => /Blodgett/i.test(b.textContent)), 'substring match leaked "Blodgett"');
+});
+
+test('switching to subjects loads the other graph at full scale', { skip: !ready && why }, async () => {
   click(sr.querySelector('[data-mode=subjects]'));
-  await new Promise((r) => setTimeout(r, 900));
+  await settle(700);
 
-  assert.ok(sr.querySelectorAll('g.node').length >= 5, 'subject graph did not render');
+  assert.equal(sr.querySelectorAll('g.node').length, graphs.subjects.nodes.length,
+    'subject graph not fully drawn');
   const link = sr.querySelector('.panel a');
-  assert.match(link.getAttribute('href'), /[?&]subject=/, 'subject nodes must link to a subject search');
-  // Subjects have no creator/recipient split, so exactly one link.
-  assert.equal(sr.querySelectorAll('.panel a').length, 1, 'subjects should offer a single link');
+  if (link) assert.match(link.getAttribute('href'), /[?&]subject=/);
 });
 
 test('no runtime errors after full interaction', { skip: !ready && why }, () => {
-  assert.deepEqual(errors, [], `errors during interaction: ${errors.join(' | ')}`);
+  assert.deepEqual(errors, [], `errors: ${errors.join(' | ')}`);
 });

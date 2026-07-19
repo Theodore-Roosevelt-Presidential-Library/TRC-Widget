@@ -177,6 +177,54 @@ If the TRC ever adds multi-value facets, this becomes a one-line change — but
 shipping the illusion of multi-select over a destination that ignores it would
 be worse than the limitation itself.
 
+## The relationship map: showing the whole, not a keyhole
+
+The first version simulated forces in the browser, which capped it at a 10-node
+neighbourhood — you could walk the network but never see it. "How big is this
+archive" is the question the visualisation exists to answer, and it went
+unanswered.
+
+**Layout moved to build time.** `scripts/graph.mjs` runs d3-force in Node and
+bakes x/y into the data. The browser runs no simulation, which is what makes
+drawing ~1,600 nodes affordable. It also makes the layout deterministic:
+everyone sees the same map, and a bad layout is reproducible rather than a
+one-off.
+
+**Rendering is split by what each technology is good at.** Edges go on canvas —
+up to ~17,000 of them, alpha-blended so density reads as tone rather than a mat
+of lines. Nodes stay in SVG, where hit-testing, focus and ARIA are free. Weak
+edges are hidden at low zoom and appear as you move in, so the overview is
+readable and detail is earned.
+
+**Labels thin by on-screen size.** 1,600 labels at once is unreadable; a handful
+feels empty. Big hubs are named at any zoom, smaller ones surface as you zoom.
+
+### The hub problem, and the toggle that solves it
+
+Roosevelt sits on **51% of all edges** (1,503 of 2,945). The default map is
+therefore a starburst — true, and the single most important fact about the
+archive, but it buries everything else.
+
+So a second layout ships alongside the first, computed with his direct links
+removed. The remaining 1,442 edges rearrange into the actual communities:
+
+| Weight | Tie |
+|---:|---|
+| 342 | Corbin ↔ MacArthur |
+| 140 | Cortelyou ↔ Wilkie |
+| 138 | Corbin ↔ Otis |
+| 138 | Loeb ↔ Loomis |
+| 135 | Chaffee ↔ Corbin |
+
+That's the Army command around Corbin and MacArthur, and the White House staff
+around Loeb and Cortelyou — the "six degrees" structure, visible only once the
+sun is out of the frame. 1,030 of 1,592 nodes move more than 100 units between
+the two layouts, so the toggle genuinely rearranges the picture rather than
+just hiding a dot.
+
+Both layouts are precomputed. Recomputing in the browser would mean shipping
+d3-force to every visitor for a view most never open.
+
 ## Widget roadmap
 
 | Widget | Data needed | Status |

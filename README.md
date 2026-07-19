@@ -94,9 +94,10 @@ connect across the archive. Opens on Roosevelt and expands as you click.
 <trc-graph mode="subjects"></trc-graph>  <!-- subject constellation -->
 ```
 
-26 KB gzipped. Live force simulation, drag to rearrange, scroll to zoom, hover
-to isolate a node's ties. Shares the same theme tokens as `<trc-search>` and
-emits `trc-node` when a node is selected.
+22 KB gzipped. Shows the **whole network at once** — 1,592 people or 1,600
+subjects — with zoom, pan, a find box, hover-to-isolate, and a toggle that
+removes Roosevelt to reveal the second-order structure. Shares the same theme
+tokens as `<trc-search>` and emits `trc-node` when a node is selected.
 
 **On the D3 dependency.** The first version hand-rolled its force layout to keep
 the project dependency-free. That was the wrong call — a graph layout is exactly
@@ -118,10 +119,16 @@ search widget doesn't include them at all (it stays at 6.9 KB).
 
 **Two things the data forced:**
 
-*The graph shows one neighbourhood at a time, not the whole network.* TR is on
-42% of items, so drawing everything produces a starburst that communicates
-nothing. Walking outward from a node is both more legible and more honest about
-how the archive is shaped.
+*Layout is precomputed at build time.* Simulating in the browser capped the map
+at a 10-node neighbourhood — a keyhole that never answered "how big is this?".
+Baking x/y into the data means the browser draws rather than simulates, so the
+whole network renders at once. Edges go on canvas, nodes stay in SVG.
+
+*Roosevelt sits on 51% of all edges,* so the default view is a starburst. A
+second precomputed layout with his direct links removed reveals the real
+communities underneath — the Army command around Corbin and MacArthur, the White
+House staff around Loeb and Cortelyou. That's the six degrees, and it only
+appears once the sun is out of the frame.
 
 *Roosevelt is excluded from the subject constellation.* He's tagged on 18,491
 items, so leaving him in connects every subject to him and to nothing else. The

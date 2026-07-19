@@ -28,6 +28,7 @@ import { writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { forceSimulation, forceLink, forceManyBody, forceCollide, forceX, forceY } from 'd3-force';
 import { readFingerprints, FINGERPRINT_FILE, TAX } from './fingerprints.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -41,9 +42,18 @@ const C = 1 + TAX.indexOf('dl_creator');
 const R = 1 + TAX.indexOf('dl_recipient');
 const S = 1 + TAX.indexOf('dl_subject');
 
-const MAX_NODES = 700;   // nodes kept per graph
-const MAX_EDGES = 14;    // strongest neighbours retained per node
+// Sized for an overview of the whole network rather than a keyhole onto part of
+// it. Because the layout is precomputed below, the browser never runs a
+// simulation, so these caps are bounded by legibility and file size, not by
+// what a phone can simulate at 60fps.
+const MAX_NODES = 1600;
+const MAX_EDGES = 12;    // strongest neighbours retained per node
 const MIN_WEIGHT = 2;    // ignore single co-occurrences: mostly noise, huge tail
+
+// Layout canvas. Coordinates are baked into the data and the widget scales them
+// to fit, so these are arbitrary units, not pixels.
+const LAYOUT_W = 1600;
+const LAYOUT_H = 1100;
 
 const args = process.argv.slice(2);
 const log = (...a) => console.log(`[${new Date().toISOString().slice(11, 19)}]`, ...a);
@@ -124,6 +134,58 @@ function prune(edgeWeights, terms, { exclude = new Set(), extra = null } = {}) {
 
   return { nodes, edges: edgeList };
 }
+
+/**
+ * Run the force layout here, at build time, and bake x/y into the data.
+ *
+ * The first version simulated in the browser, which capped what we could show:
+ * a live simulation over 1,600 nodes means ~6,000 DOM writes per frame, so the
+ * widget only ever displayed a 10-node neighbourhood. That turned the map into a
+ * keyhole — you could walk the network but never see it.
+ *
+ * Precomputing inverts the trade. The browser draws static positions and only
+ * pans and zooms, so the whole network renders at once and the visitor sees the
+ * shape of the archive immediately. It also makes the layout deterministic:
+ * everyone gets the same map, screenshots stay valid, and a bad layout is
+ * reproducible instead of a one-off.
+ *
+ * Cost is ~2 seconds in CI. The browser cost drops to zero.
+ */
+function layout(nodes, edges, radiusOf) {
+  const sim = forceSimulation(nodes.map((n, i) => ({ i, r: radiusOf(n) })))
+    .force('link', forceLink(edges.map(([a, b, w]) => ({ source: a, target: b, w })))
+      .id((d) => d.i)
+      .distance((l) => 26 + 90 * (1 - l.w / Math.max(1, ...edges.map((e) => e[2]))))
+      .strength((l) => 0.12 + 0.5 * (l.w / Math.max(1, ...edges.map((e) => e[2])))))
+    .force('charge', forceManyBody().strength(-150).distanceMax(600))
+    .force('collide', forceCollide().radius((d) => d.r + 4).iterations(3))
+    .force('x', forceX(LAYOUT_W / 2).strength(0.02))
+    .force('y', forceY(LAYOUT_H / 2).strength(0.028))
+    .stop();
+
+  // Run to convergence synchronously — no animation frames involved.
+  const ticks = Math.ceil(Math.log(0.001) / Math.log(1 - 0.0228));
+  for (let i = 0; i < ticks; i++) sim.tick();
+
+  const placed = sim.nodes();
+  const xs = placed.map((p) => p.x), ys = placed.map((p) => p.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+
+  // Normalise into the layout box so the widget can scale-to-fit without
+  // needing to know anything about the simulation's units.
+  const sx = LAYOUT_W / Math.max(1, maxX - minX);
+  const sy = LAYOUT_H / Math.max(1, maxY - minY);
+  const s = Math.min(sx, sy);
+
+  return placed.map((p) => [
+    Math.round((p.x - minX) * s),
+    Math.round((p.y - minY) * s),
+  ]);
+}
+
+/** Node radius, area-proportional so one giant hub can't swallow the canvas. */
+const radiusFor = (items) => Math.max(2.5, Math.min(34, 2 + Math.sqrt(items) / 9));
 
 async function main() {
   if (!existsSync(FINGERPRINT_FILE)) {
@@ -280,26 +342,57 @@ async function main() {
   const trPersonId = [...personTerms.entries()].find(([, t]) => /^Roosevelt, Theodore, 1858-1919$/.test(t.name))?.[0];
   const trIndex = people.nodes.findIndex((n) => n[0] === trPersonId);
 
+  log('Laying out the people graph…');
+  const peoplePos = layout(people.nodes, people.edges, (n) => radiusFor(n[3]));
+  people.nodes.forEach((n, i) => n.push(peoplePos[i][0], peoplePos[i][1]));
+
+  /**
+   * A second layout with Roosevelt's direct links removed.
+   *
+   * He sits on 51% of all edges, so the default map is a starburst: true, but it
+   * buries everything else. Drop his edges and the remaining 1,442 rearrange
+   * into the actual communities — the Army command around Corbin and MacArthur,
+   * the White House staff around Loeb and Cortelyou. That is the "six degrees"
+   * structure, and it only becomes visible once the sun is out of the frame.
+   *
+   * Both layouts ship; the widget toggles between them. Recomputing this in the
+   * browser would mean shipping d3-force to every visitor for a view most never
+   * open.
+   */
+  const trIdx = trIndex;
+  const withoutTR = people.edges.filter(([a, b]) => a !== trIdx && b !== trIdx);
+  log(`  second layout without Roosevelt (${withoutTR.length} of ${people.edges.length} edges remain)…`);
+  const altPos = layout(people.nodes, withoutTR, (n) => radiusFor(n[3]));
+  people.nodes.forEach((n, i) => n.push(altPos[i][0], altPos[i][1]));
+
   const peoplePayload = {
     graph: 'people',
     label: 'Correspondence network',
     built: new Date().toISOString(),
-    fields: { nodes: ['id', 'name', 'slug', 'items', 'weight', 'wrote', 'received'], edges: ['a', 'b', 'letters'] },
+    fields: { nodes: ['id', 'name', 'slug', 'items', 'weight', 'wrote', 'received', 'x', 'y', 'x2', 'y2'], edges: ['a', 'b', 'letters'] },
+    altLayout: { label: 'Without Roosevelt', excludes: trIndex },
     param: 'creator',
     roleParams: { wrote: 'creator', received: 'recipient' },
     root: trIndex,
+    layout: { w: LAYOUT_W, h: LAYOUT_H },
     scannedItems: items,
     ...people,
   };
 
   const subs = prune(subjectEdges, subjects, { exclude: new Set([trSubject]) });
+
+  log('Laying out the subject graph…');
+  const subPos = layout(subs.nodes, subs.edges, (n) => radiusFor(n[3]));
+  subs.nodes.forEach((n, i) => n.push(subPos[i][0], subPos[i][1]));
+
   const subjectsPayload = {
     graph: 'subjects',
     label: 'Subject constellation',
     built: new Date().toISOString(),
-    fields: { nodes: ['id', 'name', 'slug', 'items', 'weight'], edges: ['a', 'b', 'shared'] },
+    fields: { nodes: ['id', 'name', 'slug', 'items', 'weight', 'x', 'y'], edges: ['a', 'b', 'shared'] },
     param: 'subject',
     root: -1,
+    layout: { w: LAYOUT_W, h: LAYOUT_H },
     note: 'Roosevelt himself is excluded as a subject — he co-occurs with everything and hides all other structure.',
     scannedItems: items,
     ...subs,
