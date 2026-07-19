@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TRC Search Widget</title>
+<meta name="description" content="Embeddable search for the Theodore Roosevelt Center digital library.">
+<style>
+  :root{--ink:#1a1a1a;--mut:#5f5f5f;--line:#e2ddd6;--acc:#7b3f00;--bg:#fbf9f6}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .w{max-width:720px;margin:0 auto;padding:56px 24px 96px}
+  h1{font-size:30px;line-height:1.25;margin:0 0 8px;font-weight:600;letter-spacing:-.01em}
+  .sub{color:var(--mut);margin:0 0 40px}
+  h2{font-size:15px;text-transform:uppercase;letter-spacing:.07em;color:var(--mut);font-weight:600;margin:56px 0 14px}
+  p{margin:0 0 14px}
+  code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13.5px}
+  code{background:#f1ece5;padding:2px 5px;border-radius:4px}
+  pre{background:#26211c;color:#f2ede6;padding:16px 18px;border-radius:10px;overflow-x:auto;line-height:1.6}
+  pre code{background:none;padding:0;color:inherit}
+  .demo{background:#fff;border:1px solid var(--line);border-radius:14px;padding:22px}
+  .note{border-left:3px solid var(--acc);padding:2px 0 2px 14px;color:var(--mut);font-size:14.5px;margin:18px 0}
+  table{width:100%;border-collapse:collapse;font-size:14.5px;margin:0 0 14px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut)}
+  td code{font-size:12.5px}
+  footer{margin-top:72px;padding-top:22px;border-top:1px solid var(--line);color:var(--mut);font-size:14px}
+  a{color:var(--acc)}
+  @media(prefers-color-scheme:dark){
+    :root{--ink:#ececec;--mut:#a8a8a8;--line:#37322c;--bg:#161412}
+    .demo{background:#1e1b18}code{background:#2a2521}
+  }
+</style>
+</head>
+<body>
+<div class="w">
+
+  <h1>Theodore Roosevelt Center search widget</h1>
+  <p class="sub">An embeddable, dependency-free search box for 139,714 archival items. Results open at theodorerooseveltcenter.org.</p>
+
+  <div class="demo">
+    <trc-search></trc-search>
+  </div>
+
+  <div class="note">
+    Try <strong>henry cabot lodge</strong> — natural word order, which the archive's own search can't match.
+    Or <strong>cartoon</strong>, <strong>harvard</strong>, <strong>panama</strong>. Combine several; they narrow together.
+  </div>
+
+  <h2>Install</h2>
+  <p>Two lines. No build step, no framework, no dependencies.</p>
+<pre><code>&lt;script src="https://mbriney.github.io/TRC-Widget/trc-search.min.js" defer&gt;&lt;/script&gt;
+
+&lt;trc-search&gt;&lt;/trc-search&gt;</code></pre>
+
+  <h2>Options</h2>
+  <table>
+    <tr><th>Attribute</th><th>Description</th></tr>
+    <tr><td><code>placeholder</code></td><td>Placeholder text for the input.</td></tr>
+    <tr><td><code>collection</code></td><td>Lock all searches to one collection slug, e.g. <code>harvard-college-library</code>.</td></tr>
+    <tr><td><code>accent</code></td><td>Any CSS color. Defaults to <code>#7b3f00</code>.</td></tr>
+    <tr><td><code>preview</code></td><td><code>off</code> disables live count and preview requests.</td></tr>
+    <tr><td><code>data-base</code></td><td>Override where the widget loads its index from.</td></tr>
+  </table>
+
+  <h2>Scoped to one collection</h2>
+<pre><code>&lt;trc-search collection="harvard-college-library"
+            placeholder="Search the Harvard materials"&gt;&lt;/trc-search&gt;</code></pre>
+  <div class="demo" style="margin-top:14px">
+    <trc-search collection="harvard-college-library" placeholder="Search the Harvard materials" accent="#8c1515"></trc-search>
+  </div>
+
+  <h2>Events</h2>
+  <p>The element emits <code>trc-filter</code> whenever the active filters change, so a host page can track usage or mirror state.</p>
+<pre><code>document.querySelector('trc-search')
+  .addEventListener('trc-filter', e =&gt; console.log(e.detail.filters, e.detail.url));</code></pre>
+
+  <h2>How it works</h2>
+  <p>Autocomplete runs entirely against a static index built weekly from the Center's public
+  WordPress API and served from GitHub Pages — so typing costs their servers nothing, and
+  suggestions keep working even when the archive itself is slow or down. Result counts and
+  previews are fetched live, and fail quietly when unavailable.</p>
+
+  <footer>
+    <a href="https://github.com/mbriney/TRC-Widget">Source on GitHub</a> ·
+    Archival material courtesy of the <a href="https://www.theodorerooseveltcenter.org">Theodore Roosevelt Center</a> at Dickinson State University.
+  </footer>
+
+</div>
+<script src="./trc-search.js" defer></script>
+</body>
+</html>

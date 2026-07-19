@@ -1,0 +1,84 @@
+{
+  "source": "https://www.theodorerooseveltcenter.org/wp-json/wp/v2",
+  "harvested": "2026-07-19T00:36:52.820Z",
+  "durationSeconds": 1137,
+  "taxonomies": [
+    {
+      "taxonomy": "dl_creator",
+      "label": "Creators",
+      "file": "creators.json",
+      "total": 18783,
+      "bytes": 3007556,
+      "topTerm": {
+        "name": "Roosevelt, Theodore, 1858-1919",
+        "count": 58180
+      }
+    },
+    {
+      "taxonomy": "dl_recipient",
+      "label": "Recipients",
+      "file": "recipients.json",
+      "total": 35230,
+      "bytes": 4549153,
+      "topTerm": {
+        "name": "Roosevelt, Theodore, 1858-1919",
+        "count": 30656
+      }
+    },
+    {
+      "taxonomy": "dl_subject",
+      "label": "Subjects",
+      "file": "subjects.json",
+      "total": 40196,
+      "bytes": 5086919,
+      "topTerm": {
+        "name": "Roosevelt, Theodore, 1858-1919",
+        "count": 18491
+      }
+    },
+    {
+      "taxonomy": "dl_collection",
+      "label": "Collections",
+      "file": "collections.json",
+      "total": 53,
+      "bytes": 6338,
+      "topTerm": {
+        "name": "Library of Congress Manuscript Division",
+        "count": 119804
+      }
+    },
+    {
+      "taxonomy": "dl_resource_type",
+      "label": "Resource Types",
+      "file": "resource-types.json",
+      "total": 121,
+      "bytes": 6795,
+      "topTerm": {
+        "name": "Letter",
+        "count": 108670
+      }
+    },
+    {
+      "taxonomy": "dl_production_method",
+      "label": "Production Methods",
+      "file": "production-methods.json",
+      "total": 5,
+      "bytes": 395,
+      "topTerm": {
+        "name": "Typed",
+        "count": 99552
+      }
+    },
+    {
+      "taxonomy": "dl_publication",
+      "label": "Publications",
+      "file": "publications.json",
+      "total": 2158,
+      "bytes": 247827,
+      "topTerm": {
+        "name": "Theodore Roosevelt Association Journal",
+        "count": 1750
+      }
+    }
+  ]
+}

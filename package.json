@@ -1,0 +1,21 @@
+{
+  "name": "trc-widget",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Embeddable search widgets for the Theodore Roosevelt Center digital library",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "harvest": "node scripts/harvest.mjs",
+    "harvest:dry": "node scripts/harvest.mjs --dry-run",
+    "harvest:fresh": "node scripts/harvest.mjs --fresh",
+    "reshape": "node scripts/harvest.mjs --reshape",
+    "head": "node scripts/harvest.mjs --head",
+    "build": "node scripts/build.mjs",
+    "smoke": "node scripts/smoke.mjs",
+    "test": "node --test scripts/names.test.mjs && node scripts/smoke.mjs",
+    "serve": "node scripts/serve.mjs"
+  }
+}

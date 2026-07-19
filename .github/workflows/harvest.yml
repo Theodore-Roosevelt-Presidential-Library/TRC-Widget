@@ -1,0 +1,104 @@
+name: Harvest TRC taxonomies
+
+on:
+  schedule:
+    # Weekly, Sunday 08:00 UTC (~3am Central). The archive grows slowly —
+    # a few hundred items a month — so weekly is plenty and keeps us light
+    # on someone else's server.
+    - cron: '0 8 * * 0'
+  workflow_dispatch:
+    inputs:
+      only:
+        description: 'Harvest a single taxonomy (e.g. dl_creator). Blank = all.'
+        required: false
+        type: string
+      fresh:
+        description: 'Ignore checkpoints and start clean'
+        required: false
+        type: boolean
+        default: false
+
+# Never let two harvests run at once — they'd both hammer the API and race
+# on the same commit.
+concurrency:
+  group: harvest
+  cancel-in-progress: false
+
+jobs:
+  harvest:
+    runs-on: ubuntu-latest
+    # A full run is thousands of paginated requests with deliberate delays.
+    timeout-minutes: 120
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run tests
+        run: node --test scripts/names.test.mjs
+
+      # Resume a previous partial run rather than re-fetching from page 1.
+      - name: Restore harvest checkpoint
+        uses: actions/cache/restore@v4
+        with:
+          path: .harvest-cache
+          key: harvest-cache-${{ github.run_id }}
+          restore-keys: harvest-cache-
+
+      - name: Harvest
+        run: |
+          ARGS=""
+          if [ -n "${{ inputs.only }}" ]; then ARGS="$ARGS --only ${{ inputs.only }}"; fi
+          if [ "${{ inputs.fresh }}" = "true" ]; then ARGS="$ARGS --fresh"; fi
+          node scripts/harvest.mjs $ARGS
+
+      - name: Save harvest checkpoint
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .harvest-cache
+          key: harvest-cache-${{ github.run_id }}
+
+      # Guard against committing a broken harvest. If the API starts returning
+      # empty arrays we want the job to fail loudly, not to quietly replace
+      # good data with nothing.
+      - name: Sanity-check output
+        run: |
+          node -e '
+            const fs = require("fs");
+            const meta = JSON.parse(fs.readFileSync("data/meta.json", "utf8"));
+            let bad = 0;
+            for (const t of meta.taxonomies) {
+              if (!t.total || t.total < 1) {
+                console.error(`FAIL ${t.taxonomy}: ${t.total} terms`);
+                bad++;
+              } else {
+                console.log(`ok   ${t.taxonomy}: ${t.total.toLocaleString()} terms`);
+              }
+            }
+            if (bad) { console.error(`\n${bad} taxonomy/ies came back empty.`); process.exit(1); }
+          '
+
+      - name: Commit refreshed data
+        run: |
+          git config user.name  "trc-harvester[bot]"
+          git config user.email "trc-harvester[bot]@users.noreply.github.com"
+          git add data/
+          if git diff --staged --quiet; then
+            echo "No changes — archive unchanged since last harvest."
+            exit 0
+          fi
+          git commit -m "chore(data): refresh TRC taxonomy cache
+
+          $(node -e '
+            const m = require("./data/meta.json");
+            console.log(m.taxonomies.map(t =>
+              `- ${t.label}: ${t.total.toLocaleString()} terms`).join("\n"));
+          ')"
+          git push

@@ -1,0 +1,67 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'scripts/**'
+      - 'data/**'
+      - 'index.html'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Ship nothing that hasn't passed. The smoke test runs the widget's real
+      # ranking algorithm against the real index, so a bad data refresh or a
+      # regression in name handling stops the deploy rather than reaching users.
+      - name: Test
+        run: |
+          node --test scripts/names.test.mjs
+          node scripts/harvest.mjs --head
+          node scripts/smoke.mjs
+
+      - name: Build bundle
+        run: node scripts/build.mjs
+
+      - name: Assemble site
+        run: |
+          mkdir -p _site/data
+          cp dist/trc-search.js dist/trc-search.min.js _site/
+          cp index.html _site/
+          cp data/*.json _site/data/
+          # The demo page loads the unminified bundle for readable stack traces;
+          # the documented embed URL points at the minified one.
+          echo "Deploying:" && ls -lh _site _site/data
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
