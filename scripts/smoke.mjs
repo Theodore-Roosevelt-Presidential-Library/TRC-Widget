@@ -30,7 +30,7 @@ function score(t, nq) {
   return pos * Math.log10(Math.max(t.count, 1) + 1);
 }
 
-function search(q, limit = 8) {
+function search(q, limit = 8, cooc = null) {
   const nq = normalize(q);
   if (!nq) return [];
   const out = [];
@@ -38,9 +38,15 @@ function search(q, limit = 8) {
     const i = t.k.indexOf(nq);
     if (i === -1) continue;
     if (i > 0 && !/[\s|]/.test(t.k[i - 1])) continue;
-    out.push({ t, s: score(t, nq) });
+    let count = t.count;
+    if (cooc) {
+      const n = cooc.counts.get(t.id);
+      if (cooc.exact) { if (!n) continue; count = n; }
+      else if (n) count = null;
+    }
+    out.push({ t, count, s: score(t, nq) });
   }
-  return out.sort((a, b) => b.s - a.s).slice(0, limit).map((o) => o.t);
+  return out.sort((a, b) => b.s - a.s).slice(0, limit).map((o) => ({ ...o.t, count: o.count }));
 }
 
 const L = (c) => head.facets[c]?.label ?? c;
@@ -115,6 +121,44 @@ console.log('\nDeep-link construction');
         'param names or values are wrong');
   // Verified live: this exact URL returned 36 results.
   check('matches the live-verified URL shape (36 results)', true, '');
+}
+
+console.log('\nCo-occurrence filtering — no dead ends');
+{
+  const id = (facet, name) => index.find((t) => t.f === facet && t.name === name)?.id;
+  const LETTER = id('rt', 'Letter');
+  const TELEGRAM = id('rt', 'Telegram');
+  const DIARY = id('rt', 'Diary');
+
+  // Ground truth, verified live against their site:
+  //   ?creator=lodge-henry-cabot-1850-1924                    -> 554
+  //   ?creator=lodge-henry-cabot-1850-1924&resource_type=Telegram -> 36
+  // Lodge has no diaries, so Diary must not be offered as a next filter.
+  const exact = { exact: true, total: 554, counts: new Map([[LETTER, 500], [TELEGRAM, 36]]) };
+
+  const tel = search('telegram', 8, exact);
+  check(`"telegram" after Lodge shows the intersection count, not the archive count → ${tel[0]?.count}`,
+        tel[0]?.count === 36, `expected 36 (live-verified), got ${tel[0]?.count} — archive-wide is 6,558`);
+
+  const dia = search('diary', 8, exact);
+  check(`"diary" after Lodge is suppressed (${dia.length} results)`,
+        !dia.some((t) => t.id === DIARY), 'Diary offered despite zero intersection — dead end');
+
+  // A sample proves presence, never absence — it must never hide anything.
+  const sampled = { exact: false, total: 108670, counts: new Map([[LETTER, 100]]) };
+  const dia2 = search('diary', 8, sampled);
+  check('sampled scans never suppress unseen terms',
+        dia2.some((t) => t.id === DIARY), 'sampled scan wrongly hid a term it simply had not seen');
+
+  const let2 = search('letter', 8, sampled);
+  const seen = let2.find((t) => t.id === LETTER);
+  check('sampled scans show no count rather than a misleading one',
+        seen && seen.count === null, `expected null count, got ${seen?.count}`);
+
+  // Unfiltered behaviour must be untouched.
+  const plain = search('diary');
+  check('with no filters active, nothing is suppressed',
+        plain.some((t) => t.id === DIARY), 'baseline search regressed');
 }
 
 console.log('\nNo empty search keys');

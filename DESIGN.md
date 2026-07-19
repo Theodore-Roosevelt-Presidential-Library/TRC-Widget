@@ -113,6 +113,39 @@ repeatedly, across a session. This is not incidental to the project:
 
 ---
 
+## Co-occurrence filtering — no dead ends
+
+**Problem.** With Henry Cabot Lodge selected, "Diary" still matched 41 items
+archive-wide and was offered as a next filter — but Lodge has no diaries.
+Selecting it dropped the user on an empty result page. Worse, every count shown
+after the first filter was the *archive-wide* count, not the count they'd
+actually get. Both are the classic faceted-search failure.
+
+**Solution.** Each item's taxonomy fingerprint costs ~63 bytes over the API
+(`_fields=dl_creator,dl_subject,…` returns bare term-ID arrays). So once a
+filter narrows the set, we can fetch every matching item's term IDs in a handful
+of requests and know the exact intersection for every possible next filter.
+
+This runs **once per filter change, not per keystroke**, and the result is
+cached by filter set. After the scan, typing is instant and entirely local.
+
+| Result set | Behaviour |
+|---|---|
+| ≤ 600 items | Full scan (≤6 requests). Exact counts, dead ends hidden. |
+| > 600 items | Sample first 2 pages. Nothing hidden, no counts shown. |
+
+**The asymmetry is the important part.** A partial scan can prove a term is
+present but can never prove it's absent — so sampled scans are forbidden from
+hiding anything, and show `·` instead of a count they can't stand behind. Only a
+complete scan earns the right to suppress a suggestion.
+
+Verified against live ground truth: `creator=Lodge` → 554 results,
+`creator=Lodge&resource_type=Telegram` → 36. The widget now shows "Telegram · 36"
+rather than "Telegram · 6,558", and doesn't offer Diary at all.
+
+Fails soft: if the scan errors (their API 502s often), suggestions fall back to
+unfiltered. Degraded refinement, never a broken box.
+
 ## Widget roadmap
 
 | Widget | Data needed | Status |

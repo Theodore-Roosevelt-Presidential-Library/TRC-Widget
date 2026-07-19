@@ -26,6 +26,26 @@ const SEARCH = `${TRC}/digital-library/`;
 const TOTAL_ITEMS = 139714;
 
 const REST_TAX = { cr: 'dl_creator', rc: 'dl_recipient', sb: 'dl_subject', cl: 'dl_collection', rt: 'dl_resource_type', pm: 'dl_production_method', pb: 'dl_publication' };
+const TAX_FIELDS = Object.values(REST_TAX).join(',');
+
+/**
+ * Co-occurrence scanning — how the widget avoids offering dead ends.
+ *
+ * Once a filter is active, most of the vocabulary is irrelevant: with Henry
+ * Cabot Lodge selected, "Diary" matches 41 items overall but zero of his. The
+ * old behaviour offered it anyway and dropped the user on an empty result page.
+ *
+ * Each item's taxonomy fingerprint costs ~63 bytes, so for a narrowed set we can
+ * fetch every matching item's term IDs in a handful of requests and know the
+ * exact intersection for every possible next filter. After that, typing is
+ * instant and the counts shown are real, not estimates.
+ *
+ * Above the threshold we sample instead, and — importantly — a sample can prove
+ * presence but never absence, so sampled scans never hide anything.
+ */
+const COOC_EXACT_MAX = 600;   // ≤6 requests: full scan, exact counts, hide dead ends
+const COOC_SAMPLE_PAGES = 2;  // larger sets: sample only, never hide
+const PER_PAGE = 100;
 
 const ICON = {
   cr: 'M12 4a4 4 0 100 8 4 4 0 000-8zM4 20a8 8 0 0116 0',
@@ -186,6 +206,7 @@ class TrcSearch extends HTMLElement {
     const nq = normalize(q);
     if (!nq || !this.index) return [];
     const taken = new Set(this.chips.map((c) => c.f + c.value));
+    const co = this.cooc;
     const out = [];
     for (const t of this.index) {
       if (taken.has(t.f + t.value)) continue;
@@ -193,10 +214,23 @@ class TrcSearch extends HTMLElement {
       if (i === -1) continue;
       // Word-boundary only: "lodge" must not match "Blodgett".
       if (i > 0 && !/[\s|]/.test(t.k[i - 1])) continue;
-      out.push({ t, s: score(t, nq) });
+
+      let count = t.count;
+      if (co) {
+        const n = co.counts.get(t.id);
+        if (co.exact) {
+          // We know the full intersection — drop anything that would land the
+          // user on an empty page, and show the true combined count.
+          if (!n) continue;
+          count = n;
+        } else if (n) {
+          count = null; // seen in the sample; real total unknown
+        }
+      }
+      out.push({ t, count, s: score(t, nq) });
       if (out.length > 400) break;
     }
-    return out.sort((a, b) => b.s - a.s).slice(0, 8).map((o) => o.t);
+    return out.sort((a, b) => b.s - a.s).slice(0, 8).map((o) => ({ ...o.t, count: o.count }));
   }
 
   onInput() {
@@ -206,9 +240,11 @@ class TrcSearch extends HTMLElement {
     if (!q.trim()) return this.close();
 
     if (!this.matches.length) {
-      this.$sugg.innerHTML = `<div class="empty">${this.index?.length
-        ? 'No matching people, subjects or types. Press Enter to search the full text instead.'
-        : 'Press Enter to search the Theodore Roosevelt Center.'}</div>`;
+      let msg;
+      if (!this.index?.length) msg = 'Press Enter to search the Theodore Roosevelt Center.';
+      else if (this.cooc?.exact) msg = 'Nothing matching that also appears in your current results. Remove a filter to widen the search.';
+      else msg = 'No matching people, subjects or types. Press Enter to search the full text instead.';
+      this.$sugg.innerHTML = `<div class="empty">${msg}</div>`;
       this.open();
       return;
     }
@@ -230,7 +266,7 @@ class TrcSearch extends HTMLElement {
         ${svg(ICON[t.f] || ICON.sb)}
         <span class="nm">${nm}</span>
         <span class="fc">${esc(this.facets?.[t.f]?.label || '')}</span>
-        <span class="ct">${t.count.toLocaleString()}</span>
+        <span class="ct">${t.count == null ? '·' : t.count.toLocaleString()}</span>
       </button>`;
     }).join('');
 
@@ -280,6 +316,88 @@ class TrcSearch extends HTMLElement {
     this.renderChips();
     this.renderPreview();
     this.fetchPreview();
+    this.scanCooccurrence();
+  }
+
+  /** Query string identifying the current filter set, for REST calls and caching. */
+  filterQuery() {
+    const p = new URLSearchParams();
+    for (const c of this.chips) {
+      const tax = REST_TAX[c.f];
+      if (tax && c.id) p.append(tax, c.id);
+    }
+    return p;
+  }
+
+  /**
+   * Scan the active result set and record which terms actually co-occur with it.
+   *
+   * Runs once per filter change, not per keystroke. Aborts cleanly if the user
+   * changes filters mid-scan, and caches by filter set so removing and re-adding
+   * a chip costs nothing.
+   */
+  async scanCooccurrence() {
+    this._scan?.abort();
+    if (!this.chips.length || this.getAttribute('preview') === 'off') {
+      this.cooc = null;
+      return;
+    }
+
+    const key = this.chips.map((c) => c.f + c.id).sort().join(',');
+    this._coocCache ??= new Map();
+    if (this._coocCache.has(key)) {
+      this.cooc = this._coocCache.get(key);
+      if (this.$in.value.trim()) this.onInput();
+      return;
+    }
+
+    const ctrl = new AbortController();
+    this._scan = ctrl;
+    const base = this.filterQuery();
+    base.set('_fields', TAX_FIELDS);
+    base.set('per_page', String(PER_PAGE));
+
+    const counts = new Map();
+    const tally = (rows) => {
+      for (const item of rows) {
+        for (const tax of Object.values(REST_TAX)) {
+          const ids = item[tax];
+          if (!Array.isArray(ids)) continue;
+          for (const id of ids) counts.set(id, (counts.get(id) || 0) + 1);
+        }
+      }
+    };
+
+    try {
+      base.set('page', '1');
+      const first = await fetch(`${API}/digital-library?${base}`, { signal: ctrl.signal });
+      if (!first.ok) throw new Error(`HTTP ${first.status}`);
+      const total = Number(first.headers.get('x-wp-total')) || 0;
+      tally(await first.json());
+
+      const exact = total > 0 && total <= COOC_EXACT_MAX;
+      const lastPage = exact
+        ? Math.ceil(total / PER_PAGE)
+        : Math.min(COOC_SAMPLE_PAGES, Math.ceil(total / PER_PAGE));
+
+      for (let page = 2; page <= lastPage; page++) {
+        base.set('page', String(page));
+        const r = await fetch(`${API}/digital-library?${base}`, { signal: ctrl.signal });
+        if (!r.ok) break;
+        tally(await r.json());
+      }
+
+      // A partial scan can prove a term is present but never that it's absent,
+      // so only a complete scan is allowed to hide suggestions.
+      this.cooc = { counts, exact, total };
+      this._coocCache.set(key, this.cooc);
+      if (this.$in.value.trim()) this.onInput();
+    } catch (err) {
+      if (err.name === 'AbortError') return;
+      // Their API is unreliable. Losing the scan costs refinement quality, not
+      // function — fall back to unfiltered suggestions.
+      this.cooc = null;
+    }
   }
 
   renderChips() {
@@ -336,11 +454,11 @@ class TrcSearch extends HTMLElement {
     clearTimeout(this._t);
     this._t = setTimeout(async () => {
       this.renderPreview(null, null, true);
-      const p = new URLSearchParams({ per_page: '3', _fields: 'title,link,date', orderby: 'date', order: 'desc' });
-      for (const c of this.chips) {
-        const tax = REST_TAX[c.f];
-        if (tax && c.id) p.append(tax, c.id);
-      }
+      const p = this.filterQuery();
+      p.set('per_page', '3');
+      p.set('_fields', 'title,link,date');
+      p.set('orderby', 'date');
+      p.set('order', 'desc');
       try {
         const r = await fetch(`${API}/digital-library?${p}`);
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
