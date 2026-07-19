@@ -311,6 +311,42 @@ test('Show all restores the whole network', { skip: !ready && why }, async () =>
   assert.ok(sr.querySelector('.showall').hidden, '"Show all" should hide again once nothing is filtered');
 });
 
+test('a hub names its strongest ties rather than showing anonymous dots', { skip: !ready && why }, async () => {
+  const el = sr.querySelector('svg').getRootNode().host;
+  el.focusOn(graphs.people.root);   // Roosevelt: 1,503 connections, 14 drawn
+  await settle(700);
+
+  const peers = [...sr.querySelectorAll('.peer')];
+  assert.ok(peers.length >= 5,
+    'a node whose connections are mostly hidden should list its strongest by name');
+
+  // Live-verified: Taft is his heaviest correspondent at 977 letters.
+  assert.match(peers[0].textContent, /Taft/, `expected Taft first, got "${peers[0].textContent}"`);
+  assert.match(peers[0].textContent, /977/, 'peer entries should carry their letter counts');
+
+  // The panel must be honest that the map is showing a subset.
+  assert.match(sr.querySelector('.panel .m').textContent, /1,503 connections/);
+  assert.match(sr.querySelector('.panel .m').textContent, /showing the strongest/);
+
+  // And clicking one should navigate there.
+  peers[1].dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
+  await settle(700);
+  assert.match(sr.querySelector('.panel h3').textContent, /Lodge/,
+    'clicking a named correspondent should move the map to them');
+});
+
+test('an ordinary node does not repeat what the map already shows', { skip: !ready && why }, async () => {
+  const el = sr.querySelector('svg').getRootNode().host;
+  // Find someone whose ties all fit on screen; their panel needs no peer list.
+  const small = graphs.people.nodes.findIndex((n, i) =>
+    i !== graphs.people.root && (graphs.people.edges.filter(([a, b]) => a === i || b === i).length) <= 5);
+  if (small < 0) return;
+  el.focusOn(small);
+  await settle(700);
+  assert.equal(sr.querySelectorAll('.peer').length, 0,
+    'peer list should only appear when the map is hiding connections');
+});
+
 test('the isolated group is named rather than disguised as a community', { skip: !ready && why }, () => {
   // 747 people correspond only with Roosevelt. They share no relationships, so
   // labelling them by their largest member would invent a community. They get a

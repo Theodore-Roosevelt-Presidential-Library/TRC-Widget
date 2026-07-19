@@ -225,6 +225,34 @@ just hiding a dot.
 Both layouts are precomputed. Recomputing in the browser would mean shipping
 d3-force to every visitor for a view most never open.
 
+## Roosevelt is not an edge case, he is the shape of the data
+
+Nearly every problem in this widget traced back to one node:
+
+| | |
+|---|---:|
+| Items he appears on | 88,834 (64% of the archive) |
+| Share of all graph edges touching him | 51% |
+| Other people he connects to | 1,503 of 1,591 |
+| People with no correspondent but him | 746 (47%) |
+
+That single fact produced the starburst layout, the 1,504-label mat, the search
+filter that filtered nothing, and the zoom that framed everything. Each got its
+own cap, and the caps are the right fix — but it's worth naming the cause rather
+than treating them as unrelated bugs.
+
+**He stays in the map by default.** The alternative — opening on the 845-person
+network where everyone has a real correspondent — is more legible, but it hides
+the archive's central truth. This *is* the Theodore Roosevelt Center; the map
+should say so. "Without Roosevelt" remains a toggle for anyone who wants the
+second-order structure.
+
+**His panel names names.** The map can only draw a capped neighbourhood, which
+left the panel reporting "1,503 connections" beside fourteen anonymous dots. Any
+node whose ties are mostly hidden now lists its heaviest by name and count —
+Taft 977, Lodge 903, Cowles 864 — each one a link deeper into the map. The worst
+case for the visualisation became the most informative panel in it.
+
 ## Widget roadmap
 
 | Widget | Data needed | Status |

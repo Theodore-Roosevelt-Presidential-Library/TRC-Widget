@@ -91,6 +91,11 @@ svg{touch-action:none}
 .panel{padding:11px 13px;border-top:1px solid var(--trc-line);background:var(--trc-white);font-size:13px}
 .panel h3{margin:0 0 3px;font-family:var(--trc-head);font-size:16px;font-weight:700}
 .panel .m{color:var(--trc-navy-soft);margin-bottom:8px}
+.peers{display:flex;flex-wrap:wrap;gap:5px;margin:0 0 9px}
+.peer{display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:12.5px;padding:3px 8px;border:1px solid var(--trc-line);background:var(--trc-white);color:var(--trc-navy);border-radius:var(--trc-radius);cursor:pointer}
+.peer:hover{border-color:var(--trc-rust);color:var(--trc-rust)}
+.peer span{color:var(--trc-navy-soft);font-size:11.5px;font-variant-numeric:tabular-nums}
+.peer:hover span{color:var(--trc-rust)}
 .acts{display:flex;gap:8px;flex-wrap:wrap}
 .acts a,.acts button{font:inherit;font-size:13px;padding:5px 11px;border-radius:var(--trc-radius);cursor:pointer;text-decoration:none;border:1px solid var(--trc-line);background:var(--trc-white);color:var(--trc-navy)}
 .acts a{background:var(--trc-sage);border-color:var(--trc-sage);font-weight:700;display:inline-flex;align-items:center;gap:5px}
@@ -742,16 +747,44 @@ class TrcGraph extends HTMLElement {
     }
     const node = this.g.nodes[n];
     const links = (this.g.adj.get(n) || []);
-    const top = links.slice(0, 3).map(([o, w]) => `${shortName(this.g.nodes[o][1])} (${w})`).join(', ');
+    const shown = this.filter ? [...this.filter.show].filter((i) => i !== n).length : links.length;
     const unit = this.mode === 'people' ? 'connections' : 'related subjects';
     const arrow = '<svg viewBox="0 0 24 24" stroke-linecap="round"><path d="M7 17L17 7M7 7h10v10"/></svg>';
+
+    /**
+     * Hubs get their strongest ties named in the panel.
+     *
+     * The map can only draw a capped neighbourhood — Roosevelt has 1,503
+     * connections and drawing them produced the starburst this whole design has
+     * been working around. But the cap leaves the panel saying "1,503
+     * connections" beside 14 anonymous dots, which tells the reader nothing
+     * about who actually mattered.
+     *
+     * Listing the heaviest by name and count turns the worst case into the most
+     * informative one: Roosevelt's panel becomes "Taft 977, Lodge 903, Cowles
+     * 864…", each a link deeper into the map. Only shown when the map is hiding
+     * ties, since otherwise it would just repeat what's already on screen.
+     */
+    const hidden = links.length - shown;
+    const topList = hidden > 0
+      ? links.slice(0, 10).map(([o, w]) =>
+          `<button class="peer" data-go="${o}">${esc(shortName(this.g.nodes[o][1]))}<span>${w.toLocaleString()}</span></button>`).join('')
+      : '';
+
     this.$panel.hidden = false;
     this.$panel.innerHTML = `
       <h3>${esc(node[1])}</h3>
-      <div class="m">${node[3].toLocaleString()} items · ${links.length} ${unit}${top ? ` · strongest: ${esc(top)}` : ''}</div>
+      <div class="m">${node[3].toLocaleString()} items · ${links.length.toLocaleString()} ${unit}${
+        hidden > 0 ? ` · showing the strongest ${shown}` : ''}</div>
+      ${topList ? `<div class="peers">${topList}</div>` : ''}
       <div class="acts">
         ${this.roleLinks(n).map((l) => `<a href="${esc(l.href)}" target="_blank" rel="noopener">${esc(l.label)}${arrow}</a>`).join('')}
       </div>`;
+
+    this.$panel.querySelectorAll('[data-go]').forEach((b) => {
+      b.addEventListener('click', () => this.focusOn(Number(b.dataset.go)));
+    });
+
     this.dispatchEvent(new CustomEvent('trc-node', {
       bubbles: true,
       detail: { mode: this.mode, name: node[1], slug: node[2], items: node[3], url: this.url(n) },
