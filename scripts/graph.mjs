@@ -151,16 +151,41 @@ function prune(edgeWeights, terms, { exclude = new Set(), extra = null } = {}) {
  *
  * Cost is ~2 seconds in CI. The browser cost drops to zero.
  */
-function layout(nodes, edges, radiusOf) {
+function layout(nodes, edges, radiusOf, cluster = null) {
+  const maxW = Math.max(1, ...edges.map((e) => e[2]));
+
+  /**
+   * Cluster anchors.
+   *
+   * Link forces alone settle into one uniform disc — springs pull connected
+   * nodes together but nothing pushes unrelated communities apart, so the
+   * picture reads as a blob. Giving each community a home position on a circle
+   * and pulling its members gently toward it separates them spatially, which is
+   * what makes the structure visible at a glance.
+   *
+   * The pull is deliberately weak (0.055): strong enough to separate groups,
+   * weak enough that the real edges still decide local arrangement. Turn it up
+   * and you get tidy meaningless clumps.
+   */
+  const nClusters = cluster ? Math.max(...cluster) + 1 : 0;
+  const anchors = [];
+  for (let c = 0; c < nClusters; c++) {
+    const a = (c / nClusters) * Math.PI * 2 - Math.PI / 2;
+    const spread = Math.min(LAYOUT_W, LAYOUT_H) * 0.33;
+    anchors.push([LAYOUT_W / 2 + Math.cos(a) * spread, LAYOUT_H / 2 + Math.sin(a) * spread]);
+  }
+  const ax = (d) => (cluster ? anchors[cluster[d.i]][0] : LAYOUT_W / 2);
+  const ay = (d) => (cluster ? anchors[cluster[d.i]][1] : LAYOUT_H / 2);
+
   const sim = forceSimulation(nodes.map((n, i) => ({ i, r: radiusOf(n) })))
     .force('link', forceLink(edges.map(([a, b, w]) => ({ source: a, target: b, w })))
       .id((d) => d.i)
-      .distance((l) => 26 + 90 * (1 - l.w / Math.max(1, ...edges.map((e) => e[2]))))
-      .strength((l) => 0.12 + 0.5 * (l.w / Math.max(1, ...edges.map((e) => e[2])))))
+      .distance((l) => 26 + 90 * (1 - l.w / maxW))
+      .strength((l) => 0.12 + 0.5 * (l.w / maxW)))
     .force('charge', forceManyBody().strength(-150).distanceMax(600))
     .force('collide', forceCollide().radius((d) => d.r + 4).iterations(3))
-    .force('x', forceX(LAYOUT_W / 2).strength(0.02))
-    .force('y', forceY(LAYOUT_H / 2).strength(0.028))
+    .force('x', forceX(ax).strength(cluster ? 0.055 : 0.02))
+    .force('y', forceY(ay).strength(cluster ? 0.055 : 0.028))
     .stop();
 
   // Run to convergence synchronously — no animation frames involved.
@@ -186,6 +211,64 @@ function layout(nodes, edges, radiusOf) {
 
 /** Node radius, area-proportional so one giant hub can't swallow the canvas. */
 const radiusFor = (items) => Math.max(2.5, Math.min(34, 2 + Math.sqrt(items) / 9));
+
+/**
+ * Community detection by weighted label propagation.
+ *
+ * Without this the map is an undifferentiated blob: the force layout alone
+ * produces one uniform disc, because a spring model has no notion of "these
+ * belong together". Communities give the picture its structure — the Army
+ * command, the White House staff, the conservation subjects — and give the
+ * widget something meaningful to colour by.
+ *
+ * Label propagation rather than Louvain: it's ~40 lines instead of ~400, needs
+ * no dependency, and on a graph this size produces communities that are just as
+ * legible. It is not the highest-modularity partition available, but the goal
+ * here is a readable picture, not a published clustering.
+ *
+ * Determinism matters — a map that reshuffles its colours on every build makes
+ * screenshots and bug reports worthless — so nodes are visited in a fixed order
+ * (degree descending, index as tiebreak) and ties are broken by lowest label.
+ */
+function communities(nodeCount, edges, { rounds = 24, maxClusters = 9 } = {}) {
+  const adj = new Map();
+  for (const [a, b, w] of edges) {
+    (adj.get(a) ?? adj.set(a, []).get(a)).push([b, w]);
+    (adj.get(b) ?? adj.set(b, []).get(b)).push([a, w]);
+  }
+
+  const label = new Array(nodeCount);
+  for (let i = 0; i < nodeCount; i++) label[i] = i;
+
+  const order = [...Array(nodeCount).keys()]
+    .sort((x, y) => (adj.get(y)?.length || 0) - (adj.get(x)?.length || 0) || x - y);
+
+  for (let r = 0; r < rounds; r++) {
+    let changed = 0;
+    for (const i of order) {
+      const nbrs = adj.get(i);
+      if (!nbrs?.length) continue;
+      const score = new Map();
+      for (const [j, w] of nbrs) score.set(label[j], (score.get(label[j]) || 0) + w);
+      let best = label[i], bestScore = -1;
+      for (const [lab, s] of score) {
+        if (s > bestScore || (s === bestScore && lab < best)) { best = lab; bestScore = s; }
+      }
+      if (best !== label[i]) { label[i] = best; changed++; }
+    }
+    if (!changed) break;
+  }
+
+  // Rank communities by size and keep the largest; everything else becomes a
+  // single "other" group so the palette stays small enough to read.
+  const size = new Map();
+  for (const l of label) size.set(l, (size.get(l) || 0) + 1);
+  const ranked = [...size.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0]);
+  const idx = new Map();
+  ranked.slice(0, maxClusters).forEach(([l], i) => idx.set(l, i));
+
+  return label.map((l) => (idx.has(l) ? idx.get(l) : maxClusters));
+}
 
 async function main() {
   if (!existsSync(FINGERPRINT_FILE)) {
@@ -342,8 +425,17 @@ async function main() {
   const trPersonId = [...personTerms.entries()].find(([, t]) => /^Roosevelt, Theodore, 1858-1919$/.test(t.name))?.[0];
   const trIndex = people.nodes.findIndex((n) => n[0] === trPersonId);
 
+  log('Detecting communities in the people graph…');
+  // Communities are computed on the network *without* Roosevelt. He connects to
+  // 51% of everyone, so including him collapses the whole graph into a single
+  // community and the colouring says nothing.
+  const peopleNoTR = people.edges.filter(([a, b]) => a !== trIndex && b !== trIndex);
+  const peopleCluster = communities(people.nodes.length, peopleNoTR);
+  const peopleGroups = new Set(peopleCluster).size;
+  log(`  ${peopleGroups} communities`);
+
   log('Laying out the people graph…');
-  const peoplePos = layout(people.nodes, people.edges, (n) => radiusFor(n[3]));
+  const peoplePos = layout(people.nodes, people.edges, (n) => radiusFor(n[3]), peopleCluster);
   people.nodes.forEach((n, i) => n.push(peoplePos[i][0], peoplePos[i][1]));
 
   /**
@@ -359,17 +451,16 @@ async function main() {
    * browser would mean shipping d3-force to every visitor for a view most never
    * open.
    */
-  const trIdx = trIndex;
-  const withoutTR = people.edges.filter(([a, b]) => a !== trIdx && b !== trIdx);
-  log(`  second layout without Roosevelt (${withoutTR.length} of ${people.edges.length} edges remain)…`);
-  const altPos = layout(people.nodes, withoutTR, (n) => radiusFor(n[3]));
-  people.nodes.forEach((n, i) => n.push(altPos[i][0], altPos[i][1]));
+  log(`  second layout without Roosevelt (${peopleNoTR.length} of ${people.edges.length} edges remain)…`);
+  const altPos = layout(people.nodes, peopleNoTR, (n) => radiusFor(n[3]), peopleCluster);
+  people.nodes.forEach((n, i) => n.push(altPos[i][0], altPos[i][1], peopleCluster[i]));
 
   const peoplePayload = {
     graph: 'people',
     label: 'Correspondence network',
     built: new Date().toISOString(),
-    fields: { nodes: ['id', 'name', 'slug', 'items', 'weight', 'wrote', 'received', 'x', 'y', 'x2', 'y2'], edges: ['a', 'b', 'letters'] },
+    fields: { nodes: ['id', 'name', 'slug', 'items', 'weight', 'wrote', 'received', 'x', 'y', 'x2', 'y2', 'cluster'], edges: ['a', 'b', 'letters'] },
+    clusters: peopleGroups,
     altLayout: { label: 'Without Roosevelt', excludes: trIndex },
     param: 'creator',
     roleParams: { wrote: 'creator', received: 'recipient' },
@@ -381,15 +472,21 @@ async function main() {
 
   const subs = prune(subjectEdges, subjects, { exclude: new Set([trSubject]) });
 
+  log('Detecting communities in the subject graph…');
+  const subCluster = communities(subs.nodes.length, subs.edges);
+  const subGroups = new Set(subCluster).size;
+  log(`  ${subGroups} communities`);
+
   log('Laying out the subject graph…');
-  const subPos = layout(subs.nodes, subs.edges, (n) => radiusFor(n[3]));
-  subs.nodes.forEach((n, i) => n.push(subPos[i][0], subPos[i][1]));
+  const subPos = layout(subs.nodes, subs.edges, (n) => radiusFor(n[3]), subCluster);
+  subs.nodes.forEach((n, i) => n.push(subPos[i][0], subPos[i][1], subCluster[i]));
 
   const subjectsPayload = {
     graph: 'subjects',
     label: 'Subject constellation',
     built: new Date().toISOString(),
-    fields: { nodes: ['id', 'name', 'slug', 'items', 'weight', 'x', 'y'], edges: ['a', 'b', 'shared'] },
+    fields: { nodes: ['id', 'name', 'slug', 'items', 'weight', 'x', 'y', 'cluster'], edges: ['a', 'b', 'shared'] },
+    clusters: subGroups,
     param: 'subject',
     root: -1,
     layout: { w: LAYOUT_W, h: LAYOUT_H },

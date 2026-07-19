@@ -182,6 +182,52 @@ test('switching to subjects loads the other graph at full scale', { skip: !ready
   if (link) assert.match(link.getAttribute('href'), /[?&]subject=/);
 });
 
+test('labels stay sparse enough to read', { skip: !ready && why }, () => {
+  // The bug this guards: the label rule named every neighbour of the focused
+  // node. Roosevelt is selected by default and has 1,503 neighbours, so the map
+  // rendered 1,504 overlapping labels — a solid mat of text with no visible
+  // network underneath. A hub's neighbourhood must be capped.
+  const texts = [...sr.querySelectorAll('g.node text')];
+  const shown = texts.filter((t) => t.getAttribute('display') !== 'none').length;
+  assert.ok(shown > 0, 'no labels at all — the map would be anonymous dots');
+  assert.ok(shown <= 40, `${shown} labels at default zoom is an unreadable mat`);
+});
+
+test('nodes are large enough to see', { skip: !ready && why }, () => {
+  // Radius used to be multiplied by the fit scale, shrinking the median node to
+  // ~1.2px: proportional, but invisible. Size encodes item count and belongs in
+  // screen units.
+  const r = [...sr.querySelectorAll('g.node circle')].map((c) => +c.getAttribute('r'));
+  const median = r.sort((a, b) => a - b)[Math.floor(r.length / 2)];
+  assert.ok(median >= 2, `median radius ${median.toFixed(2)}px is effectively invisible`);
+  assert.ok(Math.max(...r) >= 10, 'the largest hub should be clearly bigger than the rest');
+});
+
+test('communities are detected and coloured', { skip: !ready && why }, () => {
+  const fills = new Set([...sr.querySelectorAll('g.node circle')].map((c) => c.getAttribute('fill')));
+  assert.ok(fills.size >= 5, `only ${fills.size} colours — clustering is not being applied`);
+  assert.ok(sr.querySelectorAll('.legend span').length >= 3, 'legend should name the main communities');
+});
+
+test('switching tabs rebuilds the map instead of reusing stale nodes', { skip: !ready && why }, async () => {
+  // Nodes were keyed by index alone, so People node 0 matched Subjects node 0
+  // and d3 reused the DOM — radii and labels stayed stale from the other graph,
+  // and the count was wrong by the difference in node counts.
+  click(sr.querySelector('[data-mode=people]'));
+  await settle(700);
+  assert.equal(sr.querySelectorAll('g.node').length, graphs.people.nodes.length,
+    'people tab shows the wrong number of nodes');
+
+  click(sr.querySelector('[data-mode=subjects]'));
+  await settle(700);
+  assert.equal(sr.querySelectorAll('g.node').length, graphs.subjects.nodes.length,
+    'subjects tab shows the wrong number of nodes — stale DOM from the other tab');
+});
+
+test('full screen control is present', { skip: !ready && why }, () => {
+  assert.ok(sr.querySelector('[data-z=full]'), 'no full-screen button');
+});
+
 test('no runtime errors after full interaction', { skip: !ready && why }, () => {
   assert.deepEqual(errors, [], `errors: ${errors.join(' | ')}`);
 });

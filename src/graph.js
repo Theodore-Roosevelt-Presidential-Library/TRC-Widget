@@ -32,6 +32,18 @@ import { zoom, zoomIdentity } from 'd3-zoom';
 
 const TRC = 'https://www.theodorerooseveltcenter.org/digital-library/';
 
+/**
+ * Cluster palette.
+ *
+ * Muted and low-contrast on purpose: these sit behind ~1,600 overlapping dots,
+ * and a saturated categorical scheme at that density reads as confetti. The
+ * colours only need to separate neighbouring regions, not be identifiable in
+ * isolation — the legend and the panel carry the actual naming. Anchored around
+ * the TRC's navy/sage/rust so the map still looks like their site.
+ */
+const PALETTE = ['#41577a', '#7a9e94', '#b4713a', '#6b6a94', '#8a9a5b',
+                 '#a2647a', '#4f8296', '#9c8248', '#6f7d8c', '#b0b7bd'];
+
 const CSS = `
 :host{
   all:initial;display:block;
@@ -82,6 +94,11 @@ svg{touch-action:none}
 .acts svg{position:static;width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2}
 .hint{padding:8px 13px;font-size:12.5px;color:var(--trc-navy-soft);border-top:1px solid var(--trc-line)}
 .zoomer{position:absolute;right:9px;bottom:9px;display:flex;flex-direction:column;gap:4px;z-index:20}
+.legend{position:absolute;left:9px;bottom:9px;z-index:20;display:flex;flex-wrap:wrap;gap:4px 9px;max-width:62%;font-size:11px;color:var(--trc-navy-soft)}
+.legend span{display:inline-flex;align-items:center;gap:4px}
+.legend i{width:9px;height:9px;border-radius:50%;display:inline-block}
+:host(:fullscreen) .wrap,:host(:-webkit-full-screen) .wrap{height:100vh;display:flex;flex-direction:column;border:0;border-radius:0}
+:host(:fullscreen) .stage,:host(:-webkit-full-screen) .stage{flex:1;height:auto}
 .zoomer button{width:27px;height:27px;font:inherit;font-size:15px;line-height:1;border:1px solid var(--trc-line);background:var(--trc-white);color:var(--trc-navy);border-radius:var(--trc-radius);cursor:pointer}
 .zoomer button:hover{border-color:var(--trc-navy-soft)}
 .err{padding:16px;font-size:14px;color:var(--trc-navy-soft)}
@@ -134,7 +151,9 @@ class TrcGraph extends HTMLElement {
             <button data-z="in" aria-label="Zoom in">+</button>
             <button data-z="out" aria-label="Zoom out">−</button>
             <button data-z="fit" aria-label="Fit to view">⤢</button>
+            <button data-z="full" aria-label="Full screen" title="Full screen">⛶</button>
           </div>
+          <div class="legend"></div>
         </div>
         <div class="panel" hidden></div>
         <div class="hint">Loading…</div>
@@ -152,6 +171,7 @@ class TrcGraph extends HTMLElement {
     this.$count = this.shadowRoot.querySelector('.count');
     this.$find = this.shadowRoot.querySelector('.find input');
     this.$hits = this.shadowRoot.querySelector('.hits');
+    this.$legend = this.shadowRoot.querySelector('.legend');
     this.$alt = this.shadowRoot.querySelector('.alt');
     this.$altBox = this.$alt.querySelector('input');
     this.$sr = this.shadowRoot.querySelector('.sr');
@@ -200,7 +220,15 @@ class TrcGraph extends HTMLElement {
     svg.on('click', () => this.selectNode(null));
   }
 
-  resize() {
+  /**
+   * Read the stage size and size the canvas backing store.
+   *
+   * Separated from resize() because ordering matters on a mode switch: the fit
+   * scale needs the dimensions, renderNodes needs the fit scale, and resize
+   * measures the bound selection. Folding all of that into one method made the
+   * dependency implicit, and got it wrong.
+   */
+  measure() {
     const r = this.$stage.getBoundingClientRect();
     this.W = Math.max(1, r.width);
     this.H = Math.max(1, r.height);
@@ -213,7 +241,16 @@ class TrcGraph extends HTMLElement {
     try { this.ctx = this.$canvas.getContext('2d'); } catch { this.ctx = null; }
     this.ctx?.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.$svg.setAttribute('viewBox', `0 0 ${this.W} ${this.H}`);
-    if (this.g) { this.computeFit(); this.drawEdges(); this.updateLabels(); }
+  }
+
+  /** Re-measure and redraw. Used by the ResizeObserver and on entering fullscreen. */
+  resize() {
+    this.measure();
+    if (!this.g) return;
+    this.computeFit();
+    this.renderNodes();
+    this.drawEdges();
+    this.updateLabels();
   }
 
   async setMode(mode) {
@@ -242,6 +279,7 @@ class TrcGraph extends HTMLElement {
         d.yi = d.fields.nodes.indexOf('y');
         d.x2i = d.fields.nodes.indexOf('x2');
         d.y2i = d.fields.nodes.indexOf('y2');
+        d.ci = d.fields.nodes.indexOf('cluster');
         d.key = d.nodes.map((n) => norm(n[1]));
         this.data[mode] = d;
       } catch (err) {
@@ -253,15 +291,19 @@ class TrcGraph extends HTMLElement {
     }
 
     this.selected = this.g.root >= 0 ? this.g.root : null;
+    this.hover = null;
     this.$find.value = '';
     this.$hits.hidden = true;
-    this.resize();
+    // Explicit order: measure, then fit, then bind, then draw.
+    this.measure();
+    this.computeFit();
     this.renderNodes();
     select(this.$svg).call(this.zoomer.transform, zoomIdentity);
     this.drawEdges();
     this.updateLabels();
     this.renderPanel();
 
+    this.renderLegend();
     const hasAlt = !!this.g.altLayout && this.g.x2i > -1;
     this.$alt.hidden = !hasAlt;
     if (hasAlt) this.$alt.querySelector('span').textContent = this.g.altLayout.label;
@@ -282,6 +324,14 @@ class TrcGraph extends HTMLElement {
     this.k = Math.min((this.W - pad * 2) / w, (this.H - pad * 2) / h);
     this.ox = (this.W - w * this.k) / 2;
     this.oy = (this.H - h * this.k) / 2;
+  }
+
+  /** Community colour, or the brand navy for Roosevelt himself. */
+  colourOf(i) {
+    const g = this.g;
+    if (i === g.root) return 'var(--trc-navy)';
+    if (g.ci < 0) return 'var(--trc-sage)';
+    return PALETTE[g.nodes[i][g.ci] % PALETTE.length];
   }
 
   /** Coordinate set in use: the full layout, or the one with the hub removed. */
@@ -311,7 +361,15 @@ class TrcGraph extends HTMLElement {
     this.$count.textContent =
       `${nodes.toLocaleString()} ${this.mode === 'people' ? 'people' : 'subjects'} · ${(g.edges.length - hidden).toLocaleString()} links`;
   }
-  radius(n) { return Math.max(2.5, Math.min(34, 2 + Math.sqrt(n[3]) / 9)) * this.k; }
+  /**
+   * Node radius in screen pixels.
+   *
+   * Deliberately NOT multiplied by the fit scale. Doing that shrank the median
+   * node to ~1.2px — technically proportional, practically invisible. Size
+   * should encode item count, not how much of the layout happens to be on
+   * screen, so it stays in screen units and only responds to zoom.
+   */
+  radius(n) { return Math.max(2.2, Math.min(26, 1.8 + Math.sqrt(n[3]) / 7)); }
 
   /**
    * Edges on canvas.
@@ -367,7 +425,11 @@ class TrcGraph extends HTMLElement {
 
   renderNodes() {
     const g = this.g;
-    const sel = this.gNodes.selectAll('g.node').data(g.nodes.map((n, i) => i), (i) => i);
+    // Keyed by mode as well as index. Keying on the index alone meant switching
+    // tabs matched node 0 of People to node 0 of Subjects and reused the DOM,
+    // so radii and labels stayed stale from the previous graph.
+    const sel = this.gNodes.selectAll('g.node')
+      .data(g.nodes.map((n, i) => i), (i) => `${this.mode}-${i}`);
     sel.exit().remove();
     const enter = sel.enter().append('g').attr('tabindex', 0).attr('role', 'button');
     enter.append('circle');
@@ -388,7 +450,7 @@ class TrcGraph extends HTMLElement {
     this.nodeSel.attr('display', (i) => this.isHidden(i) ? 'none' : null);
     this.nodeSel.select('circle')
       .attr('r', (i) => this.radius(g.nodes[i]))
-      .attr('fill', (i) => i === g.root ? 'var(--trc-navy)' : 'var(--trc-sage)');
+      .attr('fill', (i) => this.colourOf(i));
     this.nodeSel.select('text')
       .attr('y', (i) => this.radius(g.nodes[i]) + 11)
       .text((i) => shortName(g.nodes[i][1]));
@@ -403,16 +465,31 @@ class TrcGraph extends HTMLElement {
    * legible at every scale and rewards exploration.
    */
   updateLabels() {
-    if (!this.nodeSel) return;
+    // The bound selection can briefly belong to the previous graph during a mode
+    // switch. Measuring it against the new one reads past the end of the node
+    // array, so bail until renderNodes has rebound it.
+    if (!this.nodeSel || this.nodeSel.size() !== this.g?.nodes.length) return;
     const g = this.g;
     const k = this.t.k;
     const focus = this.hover ?? this.selected;
-    const near = focus == null ? null : new Set([focus, ...(g.adj.get(focus) || []).map(([o]) => o)]);
+
+    // Label the focus and its *strongest* neighbours only.
+    //
+    // The previous rule labelled every neighbour of the focused node. With
+    // Roosevelt selected by default that meant 1,503 labels at once, which is
+    // what turned the map into a solid mat of text. A hub's neighbourhood has
+    // to be capped or the rule destroys the view it's meant to clarify.
+    const near = new Map();
+    if (focus != null) {
+      near.set(focus, Infinity);
+      for (const [o, w] of (g.adj.get(focus) || []).slice(0, 12)) near.set(o, w);
+    }
 
     this.nodeSel.select('text').attr('display', (i) => {
-      if (i === focus) return null;
-      if (near && near.has(i) && k > 0.9) return null;
-      return this.radius(g.nodes[i]) * k >= 7 ? null : 'none';
+      if (near.has(i)) return null;
+      // Otherwise label by on-screen prominence, so hubs are named at any zoom
+      // and smaller names surface as the reader moves in.
+      return this.radius(g.nodes[i]) * k >= 9 ? null : 'none';
     });
     this.nodeSel.select('text').attr('font-size', `${Math.min(13, 11 / Math.max(k, 0.6))}px`);
     this.nodeSel.select('circle').attr('stroke-width', 0.8 / Math.max(k, 1));
@@ -424,7 +501,7 @@ class TrcGraph extends HTMLElement {
   }
 
   applyFocus() {
-    if (!this.nodeSel) return;
+    if (!this.nodeSel || this.nodeSel.size() !== this.g?.nodes.length) return;
     const focus = this.hover ?? this.selected;
     const near = focus == null ? null : new Set([focus, ...this.neighbours(focus)]);
     this.nodeSel
@@ -482,7 +559,31 @@ class TrcGraph extends HTMLElement {
     this.$hits.hidden = false;
   }
 
+  /**
+   * Full screen.
+   *
+   * The element itself goes fullscreen rather than the stage, so the shadow root
+   * — and therefore all the widget's styling — comes with it. Requesting it on
+   * an inner div would leave the controls unstyled against a black backdrop.
+   * The ResizeObserver already handles refitting, so nothing else is needed.
+   */
+  async toggleFullscreen() {
+    const doc = this.ownerDocument;
+    try {
+      if (doc.fullscreenElement === this || doc.webkitFullscreenElement === this) {
+        await (doc.exitFullscreen?.() ?? doc.webkitExitFullscreen?.());
+      } else {
+        await (this.requestFullscreen?.() ?? this.webkitRequestFullscreen?.());
+      }
+    } catch {
+      // Fullscreen is refused inside some sandboxed iframes without
+      // allow="fullscreen". Not worth an error state; the map still works.
+      this.announce('Full screen is not available here');
+    }
+  }
+
   doZoom(kind) {
+    if (kind === 'full') return this.toggleFullscreen();
     const svg = select(this.$svg);
     if (kind === 'fit') { svg.transition().duration(340).call(this.zoomer.transform, zoomIdentity); return; }
     svg.transition().duration(220).call(this.zoomer.scaleBy, kind === 'in' ? 1.6 : 1 / 1.6);
@@ -533,6 +634,34 @@ class TrcGraph extends HTMLElement {
       bubbles: true,
       detail: { mode: this.mode, name: node[1], slug: node[2], items: node[3], url: this.url(n) },
     }));
+  }
+
+  /**
+   * Legend naming each community by its largest member.
+   *
+   * A colour key that reads "Cluster 3" is decoration. Naming each group after
+   * its heaviest node — "Corbin", "Loeb" — tells the reader what the region of
+   * the map actually is, which is the whole reason for colouring it.
+   */
+  renderLegend() {
+    const g = this.g;
+    if (g.ci < 0) { this.$legend.innerHTML = ''; return; }
+    const best = new Map();
+    g.nodes.forEach((n, i) => {
+      if (i === g.root) return;
+      const c = n[g.ci];
+      const cur = best.get(c);
+      if (!cur || n[3] > g.nodes[cur][3]) best.set(c, i);
+    });
+    const size = new Map();
+    for (const n of g.nodes) size.set(n[g.ci], (size.get(n[g.ci]) || 0) + 1);
+
+    this.$legend.innerHTML = [...best.entries()]
+      .sort((a, b) => (size.get(b[0]) || 0) - (size.get(a[0]) || 0))
+      .slice(0, 6)
+      .map(([c, i]) =>
+        `<span><i style="background:${PALETTE[c % PALETTE.length]}"></i>${esc(shortName(g.nodes[i][1]))}</span>`)
+      .join('');
   }
 
   announce(msg) { this.$sr.textContent = msg; }
