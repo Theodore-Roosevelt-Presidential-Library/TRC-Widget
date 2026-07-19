@@ -35,7 +35,7 @@ jobs:
       # regression in name handling stops the deploy rather than reaching users.
       - name: Test
         run: |
-          node --test scripts/names.test.mjs
+          node --test scripts/names.test.mjs scripts/graph.test.mjs
           node scripts/harvest.mjs --head
           node scripts/smoke.mjs
 
@@ -46,6 +46,7 @@ jobs:
         run: |
           mkdir -p _site/data
           cp dist/trc-search.js dist/trc-search.min.js _site/
+          cp dist/trc-graph.js dist/trc-graph.min.js _site/
           cp index.html _site/
           cp data/*.json _site/data/
 

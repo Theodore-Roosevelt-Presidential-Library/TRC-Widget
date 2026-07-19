@@ -13,9 +13,11 @@
     "harvest:fresh": "node scripts/harvest.mjs --fresh",
     "reshape": "node scripts/harvest.mjs --reshape",
     "head": "node scripts/harvest.mjs --head",
+    "fingerprints": "node scripts/fingerprints.mjs",
+    "graphs": "node scripts/graph.mjs",
     "build": "node scripts/build.mjs",
     "smoke": "node scripts/smoke.mjs",
-    "test": "node --test scripts/names.test.mjs && node scripts/smoke.mjs",
+    "test": "node --test scripts/names.test.mjs scripts/graph.test.mjs && node scripts/smoke.mjs",
     "serve": "node scripts/serve.mjs"
   }
 }

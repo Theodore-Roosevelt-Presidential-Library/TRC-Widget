@@ -61,31 +61,49 @@ function minify(src) {
 const kb = (n) => `${(n / 1024).toFixed(1)} KB`;
 
 async function main() {
-  const names = deExport(await readFile(path.join(ROOT, 'scripts/names.mjs'), 'utf8'));
-  const widget = await readFile(path.join(ROOT, 'src/widget.js'), 'utf8');
   const pkg = JSON.parse(await readFile(path.join(ROOT, 'package.json'), 'utf8'));
-
-  const banner = `/*! trc-search v${pkg.version} — Theodore Roosevelt Center digital library search
- *  https://github.com/mbriney/TRC-Widget — built ${new Date().toISOString().slice(0, 10)}
- *  No dependencies. Drop in a <script> tag and add <trc-search></trc-search>. */`;
-
-  const bundle = `${banner}\n(function(){\n"use strict";\n${names}\n${widget}\n})();\n`;
+  const names = deExport(await readFile(path.join(ROOT, 'scripts/names.mjs'), 'utf8'));
+  const date = new Date().toISOString().slice(0, 10);
 
   await mkdir(DIST, { recursive: true });
-  await writeFile(path.join(DIST, 'trc-search.js'), bundle);
 
-  const min = `${banner}\n(function(){"use strict";\n${minify(names)}\n${minify(widget)}\n})();\n`;
-  await writeFile(path.join(DIST, 'trc-search.min.js'), min);
+  /**
+   * Two independent bundles rather than one combined file. A site embedding only
+   * the search box shouldn't download the graph code, and vice versa. Only the
+   * search widget needs names.mjs inlined — the graph works from pre-labelled
+   * nodes and has no query to normalise.
+   */
+  const targets = [
+    { out: 'trc-search', src: 'src/widget.js', tag: 'trc-search', deps: names,
+      desc: 'digital library search' },
+    { out: 'trc-graph', src: 'src/graph.js', tag: 'trc-graph', deps: '',
+      desc: 'digital library relationship map' },
+  ];
 
-  // Sanity: the bundle must not still contain ESM syntax, which would throw in
-  // a classic <script> tag.
-  for (const [name, src] of [['bundle', bundle], ['minified', min]]) {
-    if (/^\s*(export|import)\s/m.test(src)) throw new Error(`${name} still contains ESM syntax`);
-    if (!src.includes('customElements.define')) throw new Error(`${name} lost its element definition`);
+  const rows = [];
+  for (const t of targets) {
+    const body = await readFile(path.join(ROOT, t.src), 'utf8');
+    const banner = `/*! ${t.out} v${pkg.version} — Theodore Roosevelt Center ${t.desc}
+ *  https://github.com/mbriney/TRC-Widget — built ${date}
+ *  No dependencies. Drop in a <script> tag and add <${t.tag}></${t.tag}>. */`;
+
+    const bundle = `${banner}\n(function(){\n"use strict";\n${t.deps}\n${body}\n})();\n`;
+    const min = `${banner}\n(function(){"use strict";\n${t.deps ? minify(t.deps) : ''}\n${minify(body)}\n})();\n`;
+
+    await writeFile(path.join(DIST, `${t.out}.js`), bundle);
+    await writeFile(path.join(DIST, `${t.out}.min.js`), min);
+
+    // ESM syntax would throw inside a classic <script> tag, and losing the
+    // element definition would produce a bundle that loads and does nothing.
+    for (const [label, src] of [['bundle', bundle], ['minified', min]]) {
+      if (/^\s*(export|import)\s/m.test(src)) throw new Error(`${t.out} ${label} still contains ESM syntax`);
+      if (!src.includes(`customElements.define('${t.tag}'`)) throw new Error(`${t.out} ${label} lost its <${t.tag}> definition`);
+    }
+
+    rows.push({ file: `${t.out}.min.js`, raw: kb(min.length), gzipped: kb(gzipSync(Buffer.from(min), { level: 9 }).length) });
+    console.log(`  dist/${t.out}.js${' '.repeat(Math.max(1, 18 - t.out.length))}${kb(bundle.length)}`);
+    console.log(`  dist/${t.out}.min.js${' '.repeat(Math.max(1, 14 - t.out.length))}${kb(min.length)}  (${kb(gzipSync(Buffer.from(min), { level: 9 }).length)} gzipped)`);
   }
-
-  console.log(`  dist/trc-search.js      ${kb(bundle.length)}`);
-  console.log(`  dist/trc-search.min.js  ${kb(min.length)}  (${kb(gzipSync(Buffer.from(min), { level: 9 }).length)} gzipped)`);
 }
 
 main().catch((e) => { console.error('Build failed:', e.message); process.exit(1); });

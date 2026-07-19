@@ -107,6 +107,26 @@
 <pre><code>document.querySelector('trc-search')
   .addEventListener('trc-filter', e =&gt; console.log(e.detail.filters, e.detail.url));</code></pre>
 
+  <h2>Relationship map</h2>
+  <p>A second, separate widget: an interactive map of how people and subjects connect
+  across the archive. It opens on Roosevelt and expands outward as you click — six
+  degrees, made literal. Clicking through opens the TR Center in a new tab.</p>
+
+<pre><code>&lt;script src="https://trc.labs.trlibrary.com/trc-graph.min.js" defer&gt;&lt;/script&gt;
+
+&lt;trc-graph&gt;&lt;/trc-graph&gt;                  &lt;!-- correspondence network --&gt;
+&lt;trc-graph mode="subjects"&gt;&lt;/trc-graph&gt;  &lt;!-- subject constellation --&gt;</code></pre>
+
+  <div class="demo" style="padding:0;overflow:hidden">
+    <trc-graph></trc-graph>
+  </div>
+
+  <div class="note">
+    Roosevelt is deliberately excluded from the subject constellation. He's tagged on
+    18,491 items, so leaving him in connects every subject to him and to nothing else —
+    the structure disappears. The people graph keeps him, because there he's the point.
+  </div>
+
   <h2>How it works</h2>
   <p>Autocomplete runs entirely against a static index built weekly from the Center's public
   WordPress API and served from GitHub Pages — so typing costs their servers nothing, and
@@ -120,5 +140,6 @@
 
 </div>
 <script src="./trc-search.js" defer></script>
+<script src="./trc-graph.js" defer></script>
 </body>
 </html>

@@ -82,6 +82,51 @@ considerate.
 
 Emits `trc-filter` on the element whenever active filters change.
 
+## Relationship map
+
+A second, independent widget — an interactive map of how people and subjects
+connect across the archive. Opens on Roosevelt and expands as you click.
+
+```html
+<script src="https://trc.labs.trlibrary.com/trc-graph.min.js" defer></script>
+
+<trc-graph></trc-graph>                  <!-- correspondence network -->
+<trc-graph mode="subjects"></trc-graph>  <!-- subject constellation -->
+```
+
+5.5 KB gzipped, no dependencies — the force simulation is ~40 lines rather than
+a 90 KB D3 import. Shares the same theme tokens as `<trc-search>`. Emits
+`trc-node` when a node is selected.
+
+**Two things the data forced:**
+
+*The graph shows one neighbourhood at a time, not the whole network.* TR is on
+42% of items, so drawing everything produces a starburst that communicates
+nothing. Walking outward from a node is both more legible and more honest about
+how the archive is shaped.
+
+*Roosevelt is excluded from the subject constellation.* He's tagged on 18,491
+items, so leaving him in connects every subject to him and to nothing else. The
+people graph keeps him, because there he is the point.
+
+### Building the graph data
+
+The graphs need a full item scan — every item's taxonomy term IDs:
+
+```bash
+npm run fingerprints   # ~1,400 requests, ~15 min, resumable
+npm run graphs         # derive both graphs, no network
+```
+
+Fingerprints land in `.harvest-cache/` and are **not committed** — at ~8 MB
+refreshed weekly they'd add hundreds of megabytes to repo history within a year.
+The derived graph files are small and are what ships. In CI the cache persists
+between runs, so re-deriving normally costs nothing.
+
+> The same fingerprint data can precompute exact co-occurrence for every filter
+> combination, which would let `<trc-search>` drop its live scanning of the TRC
+> API entirely. Not wired up yet — see DESIGN.md.
+
 ## Deployment
 
 Hosted at **https://trc.labs.trlibrary.com** (GitHub Pages, custom domain).
