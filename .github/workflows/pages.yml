@@ -48,9 +48,18 @@ jobs:
           cp dist/trc-search.js dist/trc-search.min.js _site/
           cp index.html _site/
           cp data/*.json _site/data/
-          # The demo page loads the unminified bundle for readable stack traces;
-          # the documented embed URL points at the minified one.
-          echo "Deploying:" && ls -lh _site _site/data
+
+          # Custom domain. Without CNAME in the artifact, an Actions-based
+          # deploy can reset the domain configured in repo settings and the
+          # site silently reverts to *.github.io — breaking every embed that
+          # points at trc.labs.trlibrary.com.
+          cp CNAME _site/
+
+          # Stop Pages running the files through Jekyll, which would drop any
+          # path beginning with an underscore.
+          touch _site/.nojekyll
+
+          echo "Deploying:" && ls -la _site && ls -lh _site/data
 
       - uses: actions/upload-pages-artifact@v3
         with:

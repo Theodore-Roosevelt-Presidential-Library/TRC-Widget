@@ -57,54 +57,93 @@ const ICON = {
   pb: 'M4 5h16v14H4zM8 9h8M8 13h5',
 };
 
+/**
+ * Styling follows the Theodore Roosevelt Center's own design language, so the
+ * widget reads as part of their world rather than a bolted-on search box.
+ * Sampled from theodorerooseveltcenter.org:
+ *
+ *   navy   #132E52  body text, headings, links
+ *   rust   #BC4C01  secondary/action colour
+ *   sage   #BED0CE  primary button fill
+ *   paper  #F7F6F2  page background
+ *   Aleo (serif) headings · Nunito Sans body · 5px radius
+ *
+ * Every value is a custom property on :host, so a host page can retheme any
+ * single token without forking the widget:
+ *
+ *   trc-search { --trc-rust: #8c1515; --trc-radius: 0 }
+ *
+ * Fonts are declared as a stack and never fetched. Loading webfonts from a
+ * third party would add a network dependency and a privacy footprint to
+ * something that is meant to drop into any page — if the host already serves
+ * Aleo and Nunito Sans (as trlibrary.com and the TRC do) they're picked up for
+ * free, and the fallback is a clean system stack everywhere else.
+ */
 const CSS = `
-:host{all:initial;display:block;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#1a1a1a;line-height:1.5;--a:#7b3f00}
+:host{
+  all:initial;display:block;
+  --trc-navy:#132E52;
+  --trc-navy-soft:#41577a;
+  --trc-rust:#BC4C01;
+  --trc-sage:#BED0CE;
+  --trc-paper:#F7F6F2;
+  --trc-line:#dcd8d0;
+  --trc-line-soft:#e9e5dd;
+  --trc-white:#fff;
+  --trc-radius:5px;
+  --trc-body:"Nunito Sans",system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --trc-head:"Aleo",Georgia,"Times New Roman",serif;
+  font-family:var(--trc-body);color:var(--trc-navy);line-height:1.5;
+}
+:host([theme=inherit]){--trc-body:inherit;--trc-head:inherit}
 *{box-sizing:border-box}
 .wrap{position:relative}
 .ib{position:relative}
-.ib svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:18px;height:18px;stroke:#767676;fill:none;stroke-width:1.75;pointer-events:none}
-input{width:100%;height:44px;padding:0 12px 0 38px;font:inherit;font-size:16px;color:inherit;background:#fff;border:1px solid #c4c4c4;border-radius:8px;outline:none}
-input:focus{border-color:var(--a);box-shadow:0 0 0 3px rgba(123,63,0,.14)}
-input::placeholder{color:#767676}
+.ib svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:18px;height:18px;stroke:var(--trc-navy-soft);fill:none;stroke-width:1.75;pointer-events:none}
+input{width:100%;height:46px;padding:0 12px 0 40px;font-family:var(--trc-body);font-size:16px;color:var(--trc-navy);background:var(--trc-white);border:1px solid var(--trc-line);border-radius:var(--trc-radius);outline:none}
+input:focus{border-color:var(--trc-rust);box-shadow:0 0 0 3px rgba(188,76,1,.16)}
+input::placeholder{color:var(--trc-navy-soft);opacity:.75}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
-.chip{display:inline-flex;align-items:center;gap:6px;background:#f2ece5;color:#5a2f00;font-size:13px;padding:5px 8px 5px 10px;border-radius:6px}
-.chip b{font-weight:600;opacity:.65;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+.chip{display:inline-flex;align-items:center;gap:7px;background:var(--trc-sage);color:var(--trc-navy);font-size:13px;padding:5px 8px 5px 10px;border-radius:var(--trc-radius)}
+.chip b{font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;opacity:.7}
 .chip button{all:unset;cursor:pointer;display:flex;line-height:0;padding:2px;border-radius:3px}
-.chip button:hover{background:rgba(0,0,0,.08)}
+.chip button:hover{background:rgba(19,46,82,.14)}
 .chip svg{width:13px;height:13px;stroke:currentColor;stroke-width:2.5;fill:none}
-.sugg{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:60;background:#fff;border:1px solid #d4d4d4;border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.13);overflow:hidden;max-height:340px;overflow-y:auto}
-.opt{display:flex;align-items:center;gap:10px;width:100%;padding:9px 12px;background:none;border:0;border-top:1px solid #eee;font:inherit;font-size:14px;text-align:left;cursor:pointer;color:inherit}
+.sugg{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:60;background:var(--trc-white);border:1px solid var(--trc-line);border-radius:var(--trc-radius);box-shadow:0 6px 22px rgba(19,46,82,.15);overflow:hidden;max-height:340px;overflow-y:auto}
+.opt{display:flex;align-items:center;gap:10px;width:100%;padding:9px 12px;background:none;border:0;border-top:1px solid var(--trc-line-soft);font-family:var(--trc-body);font-size:14px;text-align:left;cursor:pointer;color:var(--trc-navy)}
 .opt:first-child{border-top:0}
-.opt[aria-selected=true]{background:#f6f2ed}
-.opt svg{width:16px;height:16px;stroke:#767676;fill:none;stroke-width:1.75;flex:none}
+.opt[aria-selected=true]{background:var(--trc-paper)}
+.opt svg{width:16px;height:16px;stroke:var(--trc-navy-soft);fill:none;stroke-width:1.75;flex:none}
 .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.nm mark{background:none;color:var(--a);font-weight:600}
-.fc{font-size:11px;color:#767676;text-transform:uppercase;letter-spacing:.04em;flex:none}
-.ct{font-size:12px;color:#555;flex:none;min-width:50px;text-align:right;font-variant-numeric:tabular-nums}
-.empty{padding:12px;font-size:14px;color:#555}
-.pv{margin-top:10px;padding:12px 14px;background:#faf8f5;border:1px solid #ebe5dd;border-radius:8px}
+.nm mark{background:none;color:var(--trc-rust);font-weight:700}
+.fc{font-size:10.5px;color:var(--trc-navy-soft);text-transform:uppercase;letter-spacing:.06em;flex:none}
+.ct{font-size:12px;color:var(--trc-navy-soft);flex:none;min-width:50px;text-align:right;font-variant-numeric:tabular-nums}
+.empty{padding:12px;font-size:14px;color:var(--trc-navy-soft)}
+.pv{margin-top:10px;padding:13px 15px;background:var(--trc-paper);border:1px solid var(--trc-line-soft);border-radius:var(--trc-radius)}
 .pvh{display:flex;align-items:baseline;gap:7px;margin-bottom:2px}
-.pvn{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums}
-.pvl{font-size:13px;color:#555}
-.it{display:flex;gap:9px;padding:8px 0;border-top:1px solid #ebe5dd;font-size:13px}
-.it:first-of-type{margin-top:8px}
-.it i{width:3px;background:#ddd4c8;border-radius:2px;flex:none}
+.pvn{font-family:var(--trc-head);font-size:25px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.15}
+.pvl{font-size:13px;color:var(--trc-navy-soft)}
+.it{display:flex;gap:10px;padding:8px 0;border-top:1px solid var(--trc-line-soft);font-size:13px}
+.it:first-of-type{margin-top:9px}
+.it i{width:3px;background:var(--trc-sage);border-radius:2px;flex:none}
 .it .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.it .m{font-size:12px;color:#767676}
-.go{display:inline-flex;align-items:center;gap:5px;margin-top:10px;font-size:14px;font-weight:500;color:var(--a);text-decoration:none}
+.it .m{font-size:12px;color:var(--trc-navy-soft)}
+.go{display:inline-flex;align-items:center;gap:6px;margin-top:11px;font-size:14px;font-weight:700;color:var(--trc-rust);text-decoration:none}
 .go:hover{text-decoration:underline}
 .go svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2}
-.err{font-size:13px;color:#767676;margin-top:8px}
-.flash{font-size:13px;color:#5a2f00;background:#f6efe6;border-radius:6px;padding:6px 10px;margin-top:8px}
-.swap{font-size:11px;color:#8a5a1e;text-transform:uppercase;letter-spacing:.04em;flex:none}
+.err{font-size:13px;color:var(--trc-navy-soft);margin-top:8px}
+.flash{font-size:13px;color:var(--trc-navy);background:var(--trc-sage);border-radius:var(--trc-radius);padding:6px 10px;margin-top:8px}
+.swap{font-size:10.5px;color:var(--trc-rust);text-transform:uppercase;letter-spacing:.06em;flex:none}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* Their site is light-only, and so is trlibrary.com. Auto-inverting on a light
+   host page would look broken, so dark mode is opt-in via theme="auto". */
 @media(prefers-color-scheme:dark){
- :host{color:#ececec}
- input{background:#1c1c1c;border-color:#444;color:#ececec}
- .sugg{background:#1c1c1c;border-color:#444}
- .opt{border-color:#2e2e2e}.opt[aria-selected=true]{background:#2a2622}
- .ct{color:#b0b0b0}.pv{background:#201d1a;border-color:#38322c}
- .it{border-color:#38322c}.chip{background:#3a2d1e;color:#f0d9bd}
+ :host([theme=auto]){
+   --trc-navy:#e8ecf2;--trc-navy-soft:#9fb0c6;--trc-rust:#f08a3c;
+   --trc-sage:#2c4a44;--trc-paper:#1a1f27;--trc-white:#141922;
+   --trc-line:#33404f;--trc-line-soft:#2a3441;
+ }
 }
 `;
 
@@ -161,7 +200,7 @@ class TrcSearch extends HTMLElement {
       </div>`;
 
     const accent = this.getAttribute('accent');
-    if (accent) this.shadowRoot.host.style.setProperty('--a', accent);
+    if (accent) this.style.setProperty('--trc-rust', accent);
 
     this.$in = this.shadowRoot.querySelector('input');
     this.$sugg = this.shadowRoot.querySelector('.sugg');
@@ -179,11 +218,24 @@ class TrcSearch extends HTMLElement {
     this.load();
   }
 
+  /**
+   * Where to load the index from.
+   *
+   * Resolved to an absolute URL from the script's own src, because the widget
+   * is normally embedded on a different origin than the one hosting it — the
+   * bundle is served from trc.labs.trlibrary.com but runs on trlibrary.com, so
+   * a relative "data/head.json" would resolve against the host page and 404.
+   *
+   * GitHub Pages sends Access-Control-Allow-Origin: *, so the cross-origin
+   * fetch of our own data is fine.
+   */
   get base() {
     const b = this.getAttribute('data-base');
     if (b) return b.replace(/\/$/, '');
-    const src = document.currentScript?.src || TrcSearch._src || '';
-    return src ? src.replace(/\/[^/]*$/, '') : '.';
+    const src = TrcSearch._src || document.currentScript?.src || '';
+    if (!src) return '.';
+    try { return new URL('.', src).href.replace(/\/$/, ''); }
+    catch { return src.replace(/\/[^/]*$/, ''); }
   }
 
   async load() {
@@ -202,6 +254,13 @@ class TrcSearch extends HTMLElement {
       // keyword search to the TRC, so a data failure must never break the box.
       this.index = [];
       this.degraded = true;
+      console.warn(
+        `[trc-search] Could not load the search index from ${this.base}/data/head.json — ` +
+        'suggestions are disabled but the search box still works. ' +
+        'If this widget is embedded on another domain, check that the host serves ' +
+        'Access-Control-Allow-Origin, or set data-base to a reachable path.',
+        err,
+      );
       this.renderPreview();
     }
   }
@@ -434,6 +493,7 @@ class TrcSearch extends HTMLElement {
       if (err.name === 'AbortError') return;
       // Their API is unreliable. Losing the scan costs refinement quality, not
       // function — fall back to unfiltered suggestions.
+      this.apiFail(err, 'Co-occurrence scan');
       this.cooc = null;
     }
   }
@@ -510,11 +570,38 @@ class TrcSearch extends HTMLElement {
             meta: (x.date || '').slice(0, 10),
           })),
         );
-      } catch {
-        // Their API 502s intermittently. Silently fall back to the link.
+      } catch (err) {
+        // Their API 502s intermittently. Fall back to the link.
+        this.apiFail(err, 'Preview request');
         if (seq === this.seq) this.renderPreview();
       }
     }, 280);
+  }
+
+  /**
+   * Report a failed call to the TRC API.
+   *
+   * Everything live (count, preview, co-occurrence) is a cross-origin request
+   * to theodorerooseveltcenter.org. WordPress sends Access-Control-Allow-Origin
+   * by default, but a security plugin or WAF rule can strip it — in which case
+   * fetch rejects with a bare TypeError and no status, indistinguishable from
+   * the site being down unless we say so.
+   *
+   * Since these features fail soft by design, without this note a CORS block
+   * would look like "the previews just never show up" and be hard to diagnose.
+   * Warns once per page, never throws.
+   */
+  apiFail(err, what) {
+    if (err?.name === 'AbortError') return;
+    if (TrcSearch._warned) return;
+    TrcSearch._warned = true;
+    const likelyCors = err instanceof TypeError && !/HTTP \d/.test(err.message || '');
+    console.warn(
+      `[trc-search] ${what} failed. ` +
+      (likelyCors
+        ? 'This looks like a CORS block or network failure — the Theodore Roosevelt Center API did not return permissive CORS headers to this origin. Live counts and previews are disabled; autocomplete and deep links still work.'
+        : `The TRC API returned an error (${err?.message || err}). This is usually transient — their server 502s under load.`),
+    );
   }
 
   announce(msg) { this.$sr.textContent = msg; }

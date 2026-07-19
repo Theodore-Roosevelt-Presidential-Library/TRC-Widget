@@ -5,31 +5,35 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>TRC Search Widget</title>
 <meta name="description" content="Embeddable search for the Theodore Roosevelt Center digital library.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Aleo:wght@400;700&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
-  :root{--ink:#1a1a1a;--mut:#5f5f5f;--line:#e2ddd6;--acc:#7b3f00;--bg:#fbf9f6}
+  /* Theodore Roosevelt Center palette, sampled from theodorerooseveltcenter.org.
+     The demo page loads Aleo and Nunito Sans so the widget can be judged as it
+     will look on their site; the widget itself never fetches fonts. */
+  :root{--navy:#132E52;--navy-soft:#41577a;--rust:#BC4C01;--sage:#BED0CE;--paper:#F7F6F2;--line:#dcd8d0}
   *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
-  .w{max-width:720px;margin:0 auto;padding:56px 24px 96px}
-  h1{font-size:30px;line-height:1.25;margin:0 0 8px;font-weight:600;letter-spacing:-.01em}
-  .sub{color:var(--mut);margin:0 0 40px}
-  h2{font-size:15px;text-transform:uppercase;letter-spacing:.07em;color:var(--mut);font-weight:600;margin:56px 0 14px}
+  body{margin:0;background:var(--paper);color:var(--navy);font:18px/1.65 "Nunito Sans",system-ui,sans-serif}
+  .w{max-width:740px;margin:0 auto;padding:56px 24px 96px}
+  h1{font-family:"Aleo",Georgia,serif;font-size:38px;line-height:1.2;margin:0 0 10px;font-weight:700}
+  .sub{color:var(--navy-soft);margin:0 0 40px;font-size:17px}
+  h2{font-family:"Aleo",Georgia,serif;font-size:22px;color:var(--navy);font-weight:700;margin:56px 0 14px}
   p{margin:0 0 14px}
   code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13.5px}
-  code{background:#f1ece5;padding:2px 5px;border-radius:4px}
-  pre{background:#26211c;color:#f2ede6;padding:16px 18px;border-radius:10px;overflow-x:auto;line-height:1.6}
+  code{background:#ece9e2;padding:2px 5px;border-radius:3px}
+  pre{background:var(--navy);color:#eaeef4;padding:16px 18px;border-radius:5px;overflow-x:auto;line-height:1.6}
   pre code{background:none;padding:0;color:inherit}
-  .demo{background:#fff;border:1px solid var(--line);border-radius:14px;padding:22px}
-  .note{border-left:3px solid var(--acc);padding:2px 0 2px 14px;color:var(--mut);font-size:14.5px;margin:18px 0}
-  table{width:100%;border-collapse:collapse;font-size:14.5px;margin:0 0 14px}
-  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
-  th{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut)}
+  .demo{background:#fff;border:1px solid var(--line);border-radius:5px;padding:24px}
+  .note{border-left:4px solid var(--sage);padding:4px 0 4px 14px;color:var(--navy-soft);font-size:15.5px;margin:18px 0}
+  table{width:100%;border-collapse:collapse;font-size:15px;margin:0 0 14px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--navy-soft)}
   td code{font-size:12.5px}
-  footer{margin-top:72px;padding-top:22px;border-top:1px solid var(--line);color:var(--mut);font-size:14px}
-  a{color:var(--acc)}
-  @media(prefers-color-scheme:dark){
-    :root{--ink:#ececec;--mut:#a8a8a8;--line:#37322c;--bg:#161412}
-    .demo{background:#1e1b18}code{background:#2a2521}
-  }
+  .sw{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 18px}
+  .sw div{font-size:11px;padding:26px 10px 6px;border-radius:5px;border:1px solid var(--line);min-width:104px}
+  footer{margin-top:72px;padding-top:22px;border-top:1px solid var(--line);color:var(--navy-soft);font-size:15px}
+  a{color:var(--rust)}
 </style>
 </head>
 <body>
@@ -49,7 +53,7 @@
 
   <h2>Install</h2>
   <p>Two lines. No build step, no framework, no dependencies.</p>
-<pre><code>&lt;script src="https://mbriney.github.io/TRC-Widget/trc-search.min.js" defer&gt;&lt;/script&gt;
+<pre><code>&lt;script src="https://trc.labs.trlibrary.com/trc-search.min.js" defer&gt;&lt;/script&gt;
 
 &lt;trc-search&gt;&lt;/trc-search&gt;</code></pre>
 
@@ -58,10 +62,38 @@
     <tr><th>Attribute</th><th>Description</th></tr>
     <tr><td><code>placeholder</code></td><td>Placeholder text for the input.</td></tr>
     <tr><td><code>collection</code></td><td>Lock all searches to one collection slug, e.g. <code>harvard-college-library</code>.</td></tr>
-    <tr><td><code>accent</code></td><td>Any CSS color. Defaults to <code>#7b3f00</code>.</td></tr>
+    <tr><td><code>accent</code></td><td>Shorthand for <code>--trc-rust</code>. Any CSS color.</td></tr>
+    <tr><td><code>theme</code></td><td><code>inherit</code> uses the host page's fonts. <code>auto</code> enables dark mode.</td></tr>
     <tr><td><code>preview</code></td><td><code>off</code> disables live count and preview requests.</td></tr>
     <tr><td><code>data-base</code></td><td>Override where the widget loads its index from.</td></tr>
   </table>
+
+  <h2>Theming</h2>
+  <p>The widget follows the Theodore Roosevelt Center's palette and typography by default.</p>
+
+  <div class="sw">
+    <div style="background:#132E52;color:#fff">#132E52 navy</div>
+    <div style="background:#BC4C01;color:#fff">#BC4C01 rust</div>
+    <div style="background:#BED0CE;color:#132E52">#BED0CE sage</div>
+    <div style="background:#F7F6F2;color:#132E52">#F7F6F2 paper</div>
+  </div>
+
+  <p>Every value is a CSS custom property, so any single token can be overridden from
+  the host page without forking the widget:</p>
+<pre><code>trc-search {
+  --trc-rust: #8c1515;   /* accent and links   */
+  --trc-navy: #1a1a1a;   /* text               */
+  --trc-sage: #e8e2d5;   /* filter chips       */
+  --trc-paper: #fafafa;  /* preview panel      */
+  --trc-radius: 0;       /* square corners     */
+  --trc-body: inherit;   /* host page's font   */
+}</code></pre>
+
+  <div class="note">
+    The widget never fetches webfonts. It declares Aleo and Nunito Sans as a stack, so it
+    picks them up when the host page already serves them and falls back cleanly when not.
+    Use <code>theme="inherit"</code> to adopt the host's typography instead.
+  </div>
 
   <h2>Scoped to one collection</h2>
 <pre><code>&lt;trc-search collection="harvard-college-library"

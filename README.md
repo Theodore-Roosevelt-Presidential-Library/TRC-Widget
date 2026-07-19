@@ -34,7 +34,7 @@ GitHub Action (weekly)  →  /data/*.json  →  GitHub Pages  →  widget
 ## Install
 
 ```html
-<script src="https://mbriney.github.io/TRC-Widget/trc-search.min.js" defer></script>
+<script src="https://trc.labs.trlibrary.com/trc-search.min.js" defer></script>
 
 <trc-search></trc-search>
 ```
@@ -46,11 +46,70 @@ in a shadow root, so it can't collide with the host page's CSS.
 |---|---|
 | `placeholder` | Input placeholder text |
 | `collection` | Lock searches to one collection slug |
-| `accent` | Any CSS color (default `#7b3f00`) |
+| `accent` | Shorthand for `--trc-rust`. Any CSS color |
+| `theme` | `inherit` uses the host page's fonts; `auto` enables dark mode |
 | `preview` | `off` disables live count and preview requests |
 | `data-base` | Override where the index is loaded from |
 
+## Theming
+
+Styled to match the Theodore Roosevelt Center: navy `#132E52`, rust `#BC4C01`,
+sage `#BED0CE`, paper `#F7F6F2`, Aleo headings, Nunito Sans body, 5px radius.
+
+Every value is a CSS custom property, so the host page can retheme any single
+token without forking:
+
+```css
+trc-search {
+  --trc-rust: #8c1515;
+  --trc-navy: #1a1a1a;
+  --trc-sage: #e8e2d5;
+  --trc-paper: #fafafa;
+  --trc-radius: 0;
+  --trc-body: inherit;
+}
+```
+
+The widget **never fetches webfonts** — that would add a network dependency and
+a third-party privacy footprint to something meant to drop into any page. Aleo
+and Nunito Sans are declared as a stack, so they're used when the host already
+serves them (as trlibrary.com and the TRC do) and fall back to a system stack
+otherwise. `theme="inherit"` adopts the host's typography instead.
+
+Dark mode is opt-in via `theme="auto"`. Both the TRC and trlibrary.com are
+light-only, so auto-inverting on a light host page would look broken rather than
+considerate.
+
 Emits `trc-filter` on the element whenever active filters change.
+
+## Deployment
+
+Hosted at **https://trc.labs.trlibrary.com** (GitHub Pages, custom domain).
+
+The `CNAME` file is committed and copied into every deploy. Don't delete it — an
+Actions-based deploy without it can reset the custom domain in repo settings, and
+the site silently reverts to `*.github.io`, breaking every embed already in the wild.
+
+DNS: `trc.labs` → `CNAME` → `mbriney.github.io`. In repo settings, Pages source
+must be **GitHub Actions**, with "Enforce HTTPS" enabled once the certificate
+provisions (usually a few minutes after DNS resolves).
+
+### Cross-origin notes
+
+The widget is designed to be embedded on other domains, so both its fetches are
+cross-origin:
+
+1. **Its own index** (`trc.labs.trlibrary.com/data/head.json`) — GitHub Pages sends
+   `Access-Control-Allow-Origin: *`, so this works from any host page. The script
+   resolves its own absolute base URL from `document.currentScript.src`.
+2. **The TRC API** (`theodorerooseveltcenter.org/wp-json/...`) for live counts,
+   previews and co-occurrence. WordPress sends permissive CORS headers by default,
+   but a WAF or security plugin can strip them.
+
+If the TRC API blocks the browser's origin, fetch rejects with a bare `TypeError`
+that's indistinguishable from the site being down. The widget logs one clear
+console warning naming CORS as the likely cause, then carries on — autocomplete
+and deep links are unaffected, only live counts and previews go away.
 
 ## Status
 
