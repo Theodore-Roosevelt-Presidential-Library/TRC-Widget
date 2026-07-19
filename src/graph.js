@@ -84,6 +84,8 @@ svg{touch-action:none}
 .node:focus{outline:none}
 .node:focus circle{stroke:var(--trc-rust);stroke-width:2.5}
 .faded{opacity:.12}
+.ctx circle{opacity:.3}
+.ctx text{display:none}
 .panel{padding:11px 13px;border-top:1px solid var(--trc-line);background:var(--trc-white);font-size:13px}
 .panel h3{margin:0 0 3px;font-family:var(--trc-head);font-size:16px;font-weight:700}
 .panel .m{color:var(--trc-navy-soft);margin-bottom:8px}
@@ -331,7 +333,12 @@ class TrcGraph extends HTMLElement {
     const g = this.g;
     if (i === g.root) return 'var(--trc-navy)';
     if (g.ci < 0) return 'var(--trc-sage)';
-    return PALETTE[g.nodes[i][g.ci] % PALETTE.length];
+    const c = g.nodes[i][g.ci];
+    // The isolated group isn't a community — it's everyone with no relationship
+    // to anyone but Roosevelt. Giving it a palette colour would imply a shared
+    // identity it doesn't have, so it takes a neutral grey and reads as ground.
+    if (c === g.isolatedCluster) return '#c3c7cb';
+    return PALETTE[c % PALETTE.length];
   }
 
   /** Coordinate set in use: the full layout, or the one with the hub removed. */
@@ -339,7 +346,11 @@ class TrcGraph extends HTMLElement {
   sy(n) { return this.oy + n[this.alt ? this.g.y2i : this.g.yi] * this.k; }
 
   /** Edges hidden in "without Roosevelt" view, and nodes left isolated by it. */
-  isHidden(i) { return this.alt && i === this.g.altLayout.excludes; }
+  isHidden(i) {
+    if (this.alt && i === this.g.altLayout?.excludes) return true;
+    if (this.filter && !this.filter.show.has(i)) return true;
+    return false;
+  }
 
   setAlt(on) {
     this.alt = on;
@@ -356,6 +367,11 @@ class TrcGraph extends HTMLElement {
 
   updateCount() {
     const g = this.g;
+    if (this.filter) {
+      const n = this.filter.match.size;
+      this.$count.textContent = `${n.toLocaleString()} match${n === 1 ? '' : 'es'} shown`;
+      return;
+    }
     const hidden = this.alt ? g.edges.filter(([a, b]) => a === g.altLayout.excludes || b === g.altLayout.excludes).length : 0;
     const nodes = g.nodes.length - (this.alt ? 1 : 0);
     this.$count.textContent =
@@ -447,7 +463,9 @@ class TrcGraph extends HTMLElement {
       .on('pointerenter', (e, i) => { this.hover = i; this.drawEdges(); this.applyFocus(); })
       .on('pointerleave', () => { this.hover = null; this.drawEdges(); this.applyFocus(); });
 
-    this.nodeSel.attr('display', (i) => this.isHidden(i) ? 'none' : null);
+    this.nodeSel.attr('display', (i) => this.isHidden(i) ? 'none' : null)
+      // Context nodes stay visible but recede so the actual matches read first.
+      .classed('ctx', (i) => !!this.filter && !this.filter.match.has(i));
     this.nodeSel.select('circle')
       .attr('r', (i) => this.radius(g.nodes[i]))
       .attr('fill', (i) => this.colourOf(i));
@@ -486,6 +504,8 @@ class TrcGraph extends HTMLElement {
     }
 
     this.nodeSel.select('text').attr('display', (i) => {
+      // While filtering, name every match — the set is small by construction.
+      if (this.filter) return this.filter.match.has(i) ? null : 'none';
       if (near.has(i)) return null;
       // Otherwise label by on-screen prominence, so hubs are named at any zoom
       // and smaller names surface as the reader moves in.
@@ -526,9 +546,38 @@ class TrcGraph extends HTMLElement {
     select(this.$svg).transition().duration(520).call(this.zoomer.transform, t);
   }
 
+  /**
+   * Filter the map to what matches the query.
+   *
+   * Highlighting alone doesn't help at this density — a dozen emphasised dots
+   * inside 1,600 others is still a haystack. Hiding non-matches turns the search
+   * box into a way of carving the network down to a question. Direct neighbours
+   * of a match stay visible but muted, because a lone dot with its edges removed
+   * tells you nothing about how that person sat in the archive.
+   */
+  applyFilter(matches) {
+    const g = this.g;
+    if (!matches || !matches.length) { this.filter = null; }
+    else {
+      const keep = new Set(matches);
+      const ctx = new Set(matches);
+      // Only each match's strongest few neighbours count as context. Taking all
+      // of them meant searching "roosevelt" pulled in his 1,503 correspondents
+      // and left 1,515 nodes on screen — a filter that filtered nothing.
+      for (const i of matches) {
+        for (const [o] of (g.adj.get(i) || []).slice(0, 8)) ctx.add(o);
+      }
+      this.filter = { match: keep, show: ctx };
+    }
+    this.renderNodes();
+    this.applyFocus();
+    this.drawEdges();
+    this.updateCount();
+  }
+
   runFind() {
     const q = norm(this.$find.value.trim());
-    if (!q) { this.$hits.hidden = true; return; }
+    if (!q) { this.$hits.hidden = true; this.applyFilter(null); return; }
     const g = this.g;
     const out = [];
     for (let i = 0; i < g.key.length && out.length < 40; i++) {
@@ -538,6 +587,7 @@ class TrcGraph extends HTMLElement {
       out.push(i);
     }
     out.sort((a, b) => g.nodes[b][3] - g.nodes[a][3]);
+    this.applyFilter(out);
     const top = out.slice(0, 8);
     if (!top.length) {
       this.$hits.innerHTML = '<button disabled style="color:var(--trc-navy-soft)">Not in the top connections shown here</button>';
@@ -552,6 +602,7 @@ class TrcGraph extends HTMLElement {
         const i = Number(b.dataset.i);
         this.$hits.hidden = true;
         this.$find.value = '';
+        this.applyFilter(null);
         this.selectNode(i);
         this.flyTo(i);
       });
@@ -656,12 +707,21 @@ class TrcGraph extends HTMLElement {
     const size = new Map();
     for (const n of g.nodes) size.set(n[g.ci], (size.get(n[g.ci]) || 0) + 1);
 
-    this.$legend.innerHTML = [...best.entries()]
+    const iso = g.isolatedCluster;
+    const entries = [...best.entries()]
+      .filter(([c]) => c !== iso)
       .sort((a, b) => (size.get(b[0]) || 0) - (size.get(a[0]) || 0))
-      .slice(0, 6)
+      .slice(0, 5)
       .map(([c, i]) =>
-        `<span><i style="background:${PALETTE[c % PALETTE.length]}"></i>${esc(shortName(g.nodes[i][1]))}</span>`)
-      .join('');
+        `<span><i style="background:${PALETTE[c % PALETTE.length]}"></i>${esc(shortName(g.nodes[i][1]))}</span>`);
+
+    // Named explicitly rather than by its largest member: "Burroughs" would
+    // suggest a community around him, when in fact none of these people are
+    // connected to each other at all.
+    if (size.get(iso) && g.isolatedLabel) {
+      entries.push(`<span><i style="background:#c3c7cb"></i>${esc(g.isolatedLabel)} (${size.get(iso).toLocaleString()})</span>`);
+    }
+    this.$legend.innerHTML = entries.join('');
   }
 
   announce(msg) { this.$sr.textContent = msg; }

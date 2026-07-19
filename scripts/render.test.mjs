@@ -228,6 +228,46 @@ test('full screen control is present', { skip: !ready && why }, () => {
   assert.ok(sr.querySelector('[data-z=full]'), 'no full-screen button');
 });
 
+test('searching filters the map down to matches', { skip: !ready && why }, async () => {
+  click(sr.querySelector('[data-mode=people]'));
+  await settle(700);
+  const total = sr.querySelectorAll('g.node').length;
+  const visible = () => [...sr.querySelectorAll('g.node')]
+    .filter((n) => n.getAttribute('display') !== 'none').length;
+
+  const input = sr.querySelector('.find input');
+  const type = async (q) => {
+    input.value = q;
+    input.dispatchEvent(new win.Event('input', { bubbles: true }));
+    await settle(200);
+  };
+
+  await type('corbin');
+  assert.ok(visible() < 30, `filter left ${visible()} nodes visible — not much of a filter`);
+  assert.ok(visible() > 0, 'filter hid everything');
+
+  // Regression: searching a hub used to pull in all its neighbours as context,
+  // leaving 1,515 of 1,592 nodes on screen — a filter that filtered nothing.
+  await type('roosevelt');
+  assert.ok(visible() < total * 0.15,
+    `hub search left ${visible()} of ${total} visible — context is uncapped again`);
+
+  await type('');
+  assert.equal(visible(), total, 'clearing the search should restore the whole map');
+});
+
+test('the isolated group is named rather than disguised as a community', { skip: !ready && why }, () => {
+  // 747 people correspond only with Roosevelt. They share no relationships, so
+  // labelling them by their largest member would invent a community. They get a
+  // neutral grey and an explicit name.
+  const legend = [...sr.querySelectorAll('.legend span')].map((s) => s.textContent);
+  assert.ok(legend.some((t) => /Only via Roosevelt/.test(t)),
+    `legend should name the isolated group: ${legend.join(' | ')}`);
+  const greys = [...sr.querySelectorAll('g.node circle')]
+    .filter((c) => c.getAttribute('fill') === '#c3c7cb').length;
+  assert.ok(greys > 300, `expected the isolated group to be grey, found ${greys}`);
+});
+
 test('no runtime errors after full interaction', { skip: !ready && why }, () => {
   assert.deepEqual(errors, [], `errors: ${errors.join(' | ')}`);
 });

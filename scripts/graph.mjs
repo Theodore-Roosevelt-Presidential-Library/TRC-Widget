@@ -151,7 +151,7 @@ function prune(edgeWeights, terms, { exclude = new Set(), extra = null } = {}) {
  *
  * Cost is ~2 seconds in CI. The browser cost drops to zero.
  */
-function layout(nodes, edges, radiusOf, cluster = null) {
+function layout(nodes, edges, radiusOf, cluster = null, isolatedId = -1) {
   const maxW = Math.max(1, ...edges.map((e) => e[2]));
 
   /**
@@ -167,15 +167,45 @@ function layout(nodes, edges, radiusOf, cluster = null) {
    * weak enough that the real edges still decide local arrangement. Turn it up
    * and you get tidy meaningless clumps.
    */
-  const nClusters = cluster ? Math.max(...cluster) + 1 : 0;
-  const anchors = [];
-  for (let c = 0; c < nClusters; c++) {
-    const a = (c / nClusters) * Math.PI * 2 - Math.PI / 2;
-    const spread = Math.min(LAYOUT_W, LAYOUT_H) * 0.33;
-    anchors.push([LAYOUT_W / 2 + Math.cos(a) * spread, LAYOUT_H / 2 + Math.sin(a) * spread]);
+  const real = cluster ? [...new Set(cluster)].filter((c) => c !== isolatedId).sort((a, b) => a - b) : [];
+  const anchors = new Map();
+  real.forEach((c, i) => {
+    const a = (i / real.length) * Math.PI * 2 - Math.PI / 2;
+    const spread = Math.min(LAYOUT_W, LAYOUT_H) * 0.3;
+    anchors.set(c, [LAYOUT_W / 2 + Math.cos(a) * spread, LAYOUT_H / 2 + Math.sin(a) * spread]);
+  });
+
+  /**
+   * Unconnected nodes are spread around the perimeter rather than given a
+   * single anchor.
+   *
+   * 747 people correspond only with Roosevelt. Pulled to one point they form a
+   * dense blob that reads as the largest community on the map, which is exactly
+   * the wrong impression — they have no relationships to each other at all.
+   * Fanned around the outside they read as what they are: a ring of people who
+   * touch the archive at one point only.
+   */
+  const isoIdx = new Map();
+  if (cluster) {
+    let k = 0;
+    cluster.forEach((c, i) => { if (c === isolatedId) isoIdx.set(i, k++); });
   }
-  const ax = (d) => (cluster ? anchors[cluster[d.i]][0] : LAYOUT_W / 2);
-  const ay = (d) => (cluster ? anchors[cluster[d.i]][1] : LAYOUT_H / 2);
+  const isoCount = Math.max(1, isoIdx.size);
+  const ring = Math.min(LAYOUT_W, LAYOUT_H) * 0.62;
+
+  const anchorFor = (i) => {
+    if (!cluster) return [LAYOUT_W / 2, LAYOUT_H / 2];
+    const c = cluster[i];
+    if (c === isolatedId) {
+      const a = (isoIdx.get(i) / isoCount) * Math.PI * 2;
+      return [LAYOUT_W / 2 + Math.cos(a) * ring, LAYOUT_H / 2 + Math.sin(a) * ring * 0.72];
+    }
+    return anchors.get(c) ?? [LAYOUT_W / 2, LAYOUT_H / 2];
+  };
+
+  const strengthFor = (d) => (cluster && cluster[d.i] === isolatedId ? 0.6 : 0.055);
+  const ax = (d) => anchorFor(d.i)[0];
+  const ay = (d) => anchorFor(d.i)[1];
 
   const sim = forceSimulation(nodes.map((n, i) => ({ i, r: radiusOf(n) })))
     .force('link', forceLink(edges.map(([a, b, w]) => ({ source: a, target: b, w })))
@@ -184,8 +214,8 @@ function layout(nodes, edges, radiusOf, cluster = null) {
       .strength((l) => 0.12 + 0.5 * (l.w / maxW)))
     .force('charge', forceManyBody().strength(-150).distanceMax(600))
     .force('collide', forceCollide().radius((d) => d.r + 4).iterations(3))
-    .force('x', forceX(ax).strength(cluster ? 0.055 : 0.02))
-    .force('y', forceY(ay).strength(cluster ? 0.055 : 0.028))
+    .force('x', forceX(ax).strength(cluster ? strengthFor : 0.02))
+    .force('y', forceY(ay).strength(cluster ? strengthFor : 0.028))
     .stop();
 
   // Run to convergence synchronously — no animation frames involved.
@@ -212,62 +242,148 @@ function layout(nodes, edges, radiusOf, cluster = null) {
 /** Node radius, area-proportional so one giant hub can't swallow the canvas. */
 const radiusFor = (items) => Math.max(2.5, Math.min(34, 2 + Math.sqrt(items) / 9));
 
+/** Modularity of a partition — used to check the clustering is worth anything. */
+export function modularity(nodeCount, edges, comm, resolution = 1) {
+  const m = edges.reduce((a, e) => a + e[2], 0);
+  if (!m) return 0;
+  const deg = new Array(nodeCount).fill(0);
+  for (const [a, b, w] of edges) { deg[a] += w; deg[b] += w; }
+  const inW = new Map(), totW = new Map();
+  for (const [a, b, w] of edges) if (comm[a] === comm[b]) inW.set(comm[a], (inW.get(comm[a]) || 0) + w);
+  for (let i = 0; i < nodeCount; i++) totW.set(comm[i], (totW.get(comm[i]) || 0) + deg[i]);
+  let q = 0;
+  for (const [c, tot] of totW) q += (inW.get(c) || 0) / m - resolution * (tot / (2 * m)) ** 2;
+  return q;
+}
+
 /**
- * Community detection by weighted label propagation.
+ * Community detection by Louvain modularity optimisation.
  *
- * Without this the map is an undifferentiated blob: the force layout alone
- * produces one uniform disc, because a spring model has no notion of "these
- * belong together". Communities give the picture its structure — the Army
- * command, the White House staff, the conservation subjects — and give the
- * widget something meaningful to colour by.
+ * This replaced weighted label propagation, which was fast, short, and produced
+ * a partition measurably worse than random: modularity −0.001 on the people
+ * graph, with 52% of nodes swept into a single community. Label propagation's
+ * well-known failure mode is exactly that — one giant label eats the graph — and
+ * a colour scheme built on it is decoration pretending to be information.
  *
- * Label propagation rather than Louvain: it's ~40 lines instead of ~400, needs
- * no dependency, and on a graph this size produces communities that are just as
- * legible. It is not the highest-modularity partition available, but the goal
- * here is a readable picture, not a published clustering.
+ * Louvain is the standard answer: greedily move nodes to whichever neighbouring
+ * community most increases modularity, aggregate each community into a single
+ * node, and repeat on the smaller graph until nothing improves.
  *
- * Determinism matters — a map that reshuffles its colours on every build makes
- * screenshots and bug reports worthless — so nodes are visited in a fixed order
- * (degree descending, index as tiebreak) and ties are broken by lowest label.
+ * `resolution` controls granularity. Above 1 the modularity null model is
+ * penalised harder, which yields more and smaller communities — the lever for
+ * "more clustering" without inventing structure that isn't there.
+ *
+ * Deterministic: nodes are visited in index order and ties break toward the
+ * lower community id, so the same input always produces the same colours.
  */
-function communities(nodeCount, edges, { rounds = 24, maxClusters = 9 } = {}) {
-  const adj = new Map();
-  for (const [a, b, w] of edges) {
-    (adj.get(a) ?? adj.set(a, []).get(a)).push([b, w]);
-    (adj.get(b) ?? adj.set(b, []).get(b)).push([a, w]);
-  }
+function louvain(nodeCount, edges, { resolution = 1, maxLevels = 12 } = {}) {
+  // Working graph, collapsed a level at a time.
+  let nodes = nodeCount;
+  let links = edges.map(([a, b, w]) => [a, b, w]);
+  let mapping = [...Array(nodeCount).keys()];  // original node -> current node
 
-  const label = new Array(nodeCount);
-  for (let i = 0; i < nodeCount; i++) label[i] = i;
+  for (let level = 0; level < maxLevels; level++) {
+    const m = links.reduce((a, e) => a + e[2], 0);
+    if (!m) break;
 
-  const order = [...Array(nodeCount).keys()]
-    .sort((x, y) => (adj.get(y)?.length || 0) - (adj.get(x)?.length || 0) || x - y);
-
-  for (let r = 0; r < rounds; r++) {
-    let changed = 0;
-    for (const i of order) {
-      const nbrs = adj.get(i);
-      if (!nbrs?.length) continue;
-      const score = new Map();
-      for (const [j, w] of nbrs) score.set(label[j], (score.get(label[j]) || 0) + w);
-      let best = label[i], bestScore = -1;
-      for (const [lab, s] of score) {
-        if (s > bestScore || (s === bestScore && lab < best)) { best = lab; bestScore = s; }
-      }
-      if (best !== label[i]) { label[i] = best; changed++; }
+    const adj = Array.from({ length: nodes }, () => []);
+    const deg = new Array(nodes).fill(0);
+    const selfW = new Array(nodes).fill(0);
+    for (const [a, b, w] of links) {
+      if (a === b) { selfW[a] += w; deg[a] += 2 * w; continue; }
+      adj[a].push([b, w]); adj[b].push([a, w]);
+      deg[a] += w; deg[b] += w;
     }
-    if (!changed) break;
-  }
 
-  // Rank communities by size and keep the largest; everything else becomes a
-  // single "other" group so the palette stays small enough to read.
+    const comm = [...Array(nodes).keys()];
+    const commTot = deg.slice();   // total degree of each community
+    let improved = false;
+
+    for (let pass = 0; pass < 20; pass++) {
+      let moved = 0;
+      for (let i = 0; i < nodes; i++) {
+        const own = comm[i];
+        // Weight from i into each neighbouring community.
+        const wTo = new Map();
+        for (const [j, w] of adj[i]) wTo.set(comm[j], (wTo.get(comm[j]) || 0) + w);
+
+        // Remove i from its community before evaluating alternatives.
+        commTot[own] -= deg[i];
+        const wOwn = wTo.get(own) || 0;
+
+        let best = own;
+        let bestGain = wOwn - (resolution * commTot[own] * deg[i]) / (2 * m);
+        for (const [c, w] of wTo) {
+          if (c === own) continue;
+          const gain = w - (resolution * commTot[c] * deg[i]) / (2 * m);
+          if (gain > bestGain + 1e-12 || (Math.abs(gain - bestGain) < 1e-12 && c < best)) {
+            best = c; bestGain = gain;
+          }
+        }
+        commTot[best] += deg[i];
+        if (best !== own) { comm[i] = best; moved++; improved = true; }
+      }
+      if (!moved) break;
+    }
+
+    if (!improved) break;
+
+    // Renumber surviving communities, then aggregate them into super-nodes.
+    const renum = new Map();
+    for (const c of comm) if (!renum.has(c)) renum.set(c, renum.size);
+    const next = comm.map((c) => renum.get(c));
+    mapping = mapping.map((n) => next[n]);
+
+    const agg = new Map();
+    for (const [a, b, w] of links) {
+      const ca = next[a], cb = next[b];
+      const key = ca <= cb ? `${ca}|${cb}` : `${cb}|${ca}`;
+      agg.set(key, (agg.get(key) || 0) + w);
+    }
+    const newNodes = renum.size;
+    if (newNodes === nodes) break;   // converged
+    nodes = newNodes;
+    links = [...agg.entries()].map(([k, w]) => {
+      const [a, b] = k.split('|').map(Number);
+      return [a, b, w];
+    });
+  }
+  return mapping;
+}
+
+/**
+ * Detect communities and reduce them to a palette-sized set.
+ *
+ * Louvain typically finds far more communities than can be distinguished by
+ * colour, so the largest are kept and the remainder collapse into one "other"
+ * group. Ranking by size keeps the named regions the ones a reader will
+ * actually notice.
+ */
+function communities(nodeCount, edges, { maxClusters = 8, resolution = 1.35 } = {}) {
+  // Nodes with no edges in this graph get their own reserved group.
+  //
+  // In the people network, 747 of 1,592 — 47% — have no correspondent other than
+  // Roosevelt. Louvain has nothing to cluster them on, so they were all landing
+  // in the leftover bucket and appearing as one enormous fake "community" that
+  // swamped every real one. They aren't a community; they're a category, and a
+  // genuinely interesting one: people who touch the archive only through TR.
+  // Given their own group and their own colour, they stop distorting the rest.
+  const linked = new Set();
+  for (const [a, b] of edges) { linked.add(a); linked.add(b); }
+  const ISOLATED = maxClusters + 1;
+
+  const raw = louvain(nodeCount, edges, { resolution });
+
   const size = new Map();
-  for (const l of label) size.set(l, (size.get(l) || 0) + 1);
+  raw.forEach((c, i) => { if (linked.has(i)) size.set(c, (size.get(c) || 0) + 1); });
   const ranked = [...size.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0]);
   const idx = new Map();
-  ranked.slice(0, maxClusters).forEach(([l], i) => idx.set(l, i));
+  ranked.slice(0, maxClusters).forEach(([c], i) => idx.set(c, i));
 
-  return label.map((l) => (idx.has(l) ? idx.get(l) : maxClusters));
+  return raw.map((c, i) => {
+    if (!linked.has(i)) return ISOLATED;
+    return idx.has(c) ? idx.get(c) : maxClusters;
+  });
 }
 
 async function main() {
@@ -432,10 +548,12 @@ async function main() {
   const peopleNoTR = people.edges.filter(([a, b]) => a !== trIndex && b !== trIndex);
   const peopleCluster = communities(people.nodes.length, peopleNoTR);
   const peopleGroups = new Set(peopleCluster).size;
-  log(`  ${peopleGroups} communities`);
+  const peopleQ = modularity(people.nodes.length, peopleNoTR, peopleCluster);
+  log(`  ${peopleGroups} communities, modularity ${peopleQ.toFixed(3)}`);
+  if (peopleQ < 0.2) log('  WARNING: weak community structure — colouring may be meaningless');
 
   log('Laying out the people graph…');
-  const peoplePos = layout(people.nodes, people.edges, (n) => radiusFor(n[3]), peopleCluster);
+  const peoplePos = layout(people.nodes, people.edges, (n) => radiusFor(n[3]), peopleCluster, 9);
   people.nodes.forEach((n, i) => n.push(peoplePos[i][0], peoplePos[i][1]));
 
   /**
@@ -452,7 +570,7 @@ async function main() {
    * open.
    */
   log(`  second layout without Roosevelt (${peopleNoTR.length} of ${people.edges.length} edges remain)…`);
-  const altPos = layout(people.nodes, peopleNoTR, (n) => radiusFor(n[3]), peopleCluster);
+  const altPos = layout(people.nodes, peopleNoTR, (n) => radiusFor(n[3]), peopleCluster, 9);
   people.nodes.forEach((n, i) => n.push(altPos[i][0], altPos[i][1], peopleCluster[i]));
 
   const peoplePayload = {
@@ -461,6 +579,8 @@ async function main() {
     built: new Date().toISOString(),
     fields: { nodes: ['id', 'name', 'slug', 'items', 'weight', 'wrote', 'received', 'x', 'y', 'x2', 'y2', 'cluster'], edges: ['a', 'b', 'letters'] },
     clusters: peopleGroups,
+    isolatedCluster: 9,
+    isolatedLabel: 'Only via Roosevelt',
     altLayout: { label: 'Without Roosevelt', excludes: trIndex },
     param: 'creator',
     roleParams: { wrote: 'creator', received: 'recipient' },
@@ -475,10 +595,12 @@ async function main() {
   log('Detecting communities in the subject graph…');
   const subCluster = communities(subs.nodes.length, subs.edges);
   const subGroups = new Set(subCluster).size;
-  log(`  ${subGroups} communities`);
+  const subQ = modularity(subs.nodes.length, subs.edges, subCluster);
+  log(`  ${subGroups} communities, modularity ${subQ.toFixed(3)}`);
+  if (subQ < 0.2) log('  WARNING: weak community structure — colouring may be meaningless');
 
   log('Laying out the subject graph…');
-  const subPos = layout(subs.nodes, subs.edges, (n) => radiusFor(n[3]), subCluster);
+  const subPos = layout(subs.nodes, subs.edges, (n) => radiusFor(n[3]), subCluster, 9);
   subs.nodes.forEach((n, i) => n.push(subPos[i][0], subPos[i][1], subCluster[i]));
 
   const subjectsPayload = {
@@ -487,6 +609,7 @@ async function main() {
     built: new Date().toISOString(),
     fields: { nodes: ['id', 'name', 'slug', 'items', 'weight', 'x', 'y', 'cluster'], edges: ['a', 'b', 'shared'] },
     clusters: subGroups,
+    isolatedCluster: 9,
     param: 'subject',
     root: -1,
     layout: { w: LAYOUT_W, h: LAYOUT_H },
