@@ -1,14 +1,14 @@
 {
   "source": "https://www.theodorerooseveltcenter.org/wp-json/wp/v2",
-  "harvested": "2026-07-19T00:36:52.820Z",
-  "durationSeconds": 1137,
+  "harvested": "2026-07-19T09:02:35.122Z",
+  "durationSeconds": 737,
   "taxonomies": [
     {
       "taxonomy": "dl_creator",
-      "label": "Creators",
+      "label": "Creator",
       "file": "creators.json",
       "total": 18783,
-      "bytes": 3007556,
+      "bytes": 3002230,
       "topTerm": {
         "name": "Roosevelt, Theodore, 1858-1919",
         "count": 58180
@@ -16,10 +16,10 @@
     },
     {
       "taxonomy": "dl_recipient",
-      "label": "Recipients",
+      "label": "Recipient",
       "file": "recipients.json",
       "total": 35230,
-      "bytes": 4549153,
+      "bytes": 4544334,
       "topTerm": {
         "name": "Roosevelt, Theodore, 1858-1919",
         "count": 30656
@@ -27,10 +27,10 @@
     },
     {
       "taxonomy": "dl_subject",
-      "label": "Subjects",
+      "label": "Subject",
       "file": "subjects.json",
       "total": 40196,
-      "bytes": 5086919,
+      "bytes": 5084353,
       "topTerm": {
         "name": "Roosevelt, Theodore, 1858-1919",
         "count": 18491
@@ -38,10 +38,10 @@
     },
     {
       "taxonomy": "dl_collection",
-      "label": "Collections",
+      "label": "Collection",
       "file": "collections.json",
       "total": 53,
-      "bytes": 6338,
+      "bytes": 6337,
       "topTerm": {
         "name": "Library of Congress Manuscript Division",
         "count": 119804
@@ -49,10 +49,10 @@
     },
     {
       "taxonomy": "dl_resource_type",
-      "label": "Resource Types",
+      "label": "Type",
       "file": "resource-types.json",
       "total": 121,
-      "bytes": 6795,
+      "bytes": 6785,
       "topTerm": {
         "name": "Letter",
         "count": 108670
@@ -60,10 +60,10 @@
     },
     {
       "taxonomy": "dl_production_method",
-      "label": "Production Methods",
+      "label": "Production",
       "file": "production-methods.json",
       "total": 5,
-      "bytes": 395,
+      "bytes": 387,
       "topTerm": {
         "name": "Typed",
         "count": 99552
@@ -71,10 +71,10 @@
     },
     {
       "taxonomy": "dl_publication",
-      "label": "Publications",
+      "label": "Publication",
       "file": "publications.json",
       "total": 2158,
-      "bytes": 247827,
+      "bytes": 247570,
       "topTerm": {
         "name": "Theodore Roosevelt Association Journal",
         "count": 1750
