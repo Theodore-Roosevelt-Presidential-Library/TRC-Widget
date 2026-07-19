@@ -15,10 +15,12 @@
  * Everything renders inside a shadow root, so the host page's CSS can't reach in
  * and ours can't leak out. No dependencies, no build framework, no globals.
  *
- * NOTE: `names.mjs` is inlined above this file at build time by scripts/build.mjs,
- * which is why buildSearchKey/normalize are in scope without an import. Editing
- * the derivation happens there, not here.
+ * Name normalisation is imported from scripts/names.mjs and inlined by the
+ * bundler, so the browser and the harvester share one definition. If those ever
+ * drifted, typed queries would silently stop matching the cached index.
  */
+
+import { buildSearchKey, normalize } from './names.mjs';
 
 const TRC = 'https://www.theodorerooseveltcenter.org';
 const API = `${TRC}/wp-json/wp/v2`;

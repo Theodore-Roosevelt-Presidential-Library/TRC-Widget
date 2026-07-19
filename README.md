@@ -39,7 +39,7 @@ GitHub Action (weekly)  →  /data/*.json  →  GitHub Pages  →  widget
 <trc-search></trc-search>
 ```
 
-6.5 KB gzipped. No dependencies, no framework, no build step on your end. Renders
+6.9 KB gzipped. No runtime dependencies, no framework, no build step on your end. Renders
 in a shadow root, so it can't collide with the host page's CSS.
 
 | Attribute | Description |
@@ -94,9 +94,27 @@ connect across the archive. Opens on Roosevelt and expands as you click.
 <trc-graph mode="subjects"></trc-graph>  <!-- subject constellation -->
 ```
 
-5.5 KB gzipped, no dependencies — the force simulation is ~40 lines rather than
-a 90 KB D3 import. Shares the same theme tokens as `<trc-search>`. Emits
-`trc-node` when a node is selected.
+26 KB gzipped. Live force simulation, drag to rearrange, scroll to zoom, hover
+to isolate a node's ties. Shares the same theme tokens as `<trc-search>` and
+emits `trc-node` when a node is selected.
+
+**On the D3 dependency.** The first version hand-rolled its force layout to keep
+the project dependency-free. That was the wrong call — a graph layout is exactly
+the thing not to hand-roll, and the result looked it. `d3-force` brings velocity
+Verlet integration, a Barnes-Hut quadtree, collision resolution and proper alpha
+cooling; the hand-rolled version approximated all of it badly.
+
+The modules are **bundled at build time, not loaded from a CDN**. An embeddable
+widget that breaks when jsdelivr is blocked isn't embeddable, and institutional
+networks block plenty. The shipped file still has no runtime dependencies —
+`d3-force`, `d3-selection`, `d3-zoom` and `d3-drag` are build-time only, and the
+search widget doesn't include them at all (it stays at 6.9 KB).
+
+| Attribute | Description |
+|---|---|
+| `mode` | `people` (default) or `subjects` |
+| `height` | Stage height, e.g. `560px`. Default `460px` |
+| `accent` / `theme` / `data-base` | Same as `<trc-search>` |
 
 **Two things the data forced:**
 
@@ -162,6 +180,7 @@ and deep links are unaffected, only live counts and previews go away.
 - [x] Weekly GitHub Action with sanity checks
 - [x] Merged head index (4,179 terms, 90 KB gzipped)
 - [x] Quick Search widget + Pages deploy
+- [x] Relationship map (people + subjects)
 - [ ] Prefix shards for the long tail
 - [ ] Guided / Advanced widget
 - [ ] Featured / Browse widget
@@ -170,7 +189,8 @@ and deep links are unaffected, only live counts and previews go away.
 ## Development
 
 ```bash
-npm test          # name tests + smoke test against the real index
+npm install       # build-time deps only (esbuild, d3-*)
+npm test          # name, graph and end-to-end search tests
 npm run build     # bundle to dist/
 npm run serve     # dev server at localhost:8080 (fetch needs http://)
 ```
@@ -184,7 +204,7 @@ npm run reshape       # re-derive from cached data, no network
 npm run head          # rebuild the merged head index
 ```
 
-Node 18+. No dependencies anywhere in the project.
+Node 18+. Build-time dependencies only — the shipped widgets have none.
 
 ## Layout
 

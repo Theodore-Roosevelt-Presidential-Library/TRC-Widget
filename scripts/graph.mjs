@@ -68,7 +68,7 @@ async function loadTerms(file) {
  * people who are *connected*, not merely prolific. Someone with 400 items all
  * lacking a correspondent contributes nothing to a correspondence graph.
  */
-function prune(edgeWeights, terms, { exclude = new Set() } = {}) {
+function prune(edgeWeights, terms, { exclude = new Set(), extra = null } = {}) {
   const nodeWeight = new Map();
   for (const [key, w] of edgeWeights) {
     const [a, b] = key.split('|').map(Number);
@@ -110,7 +110,7 @@ function prune(edgeWeights, terms, { exclude = new Set() } = {}) {
     .filter(([id]) => connected.has(id))
     .map(([id, w]) => {
       const t = terms.get(id);
-      return [id, t.name, t.slug, t.count, w];
+      return [id, t.name, t.slug, t.count, w, ...(extra ? extra(t) : [])];
     });
 
   const index = new Map(nodes.map((n, i) => [n[0], i]));
@@ -151,11 +151,26 @@ async function main() {
   const personTerms = new Map();
   const canon = (m, id) => m.get(id)?.name;
 
+  // Item counts are tallied during the scan rather than taken from either
+  // taxonomy.
+  //
+  // A person exists as two term IDs — creator and recipient — with separate
+  // counts. Seeding from whichever role appeared first gave TR 30,656 items (his
+  // recipient count) while his node linked to a search returning 58,180. Summing
+  // the two would double-count items where someone is both. Counting distinct
+  // items during the scan is exact, and costs one Set membership test per item.
+  const personItems = new Map();
+  // Kept separately because the TRC's search can only filter one role at a
+  // time: ?creator=x and ?recipient=x are different searches. A node is a
+  // person, so the panel offers both and labels each with its own count.
+  const personAsCreator = new Map();
+  const personAsRecipient = new Map();
+
   const seedPerson = (name, id, map) => {
     if (!nameToId.has(name)) {
       nameToId.set(name, id);
       const t = map.get(id);
-      personTerms.set(id, { name: t.name, slug: t.slug, count: t.count });
+      personTerms.set(id, { name: t.name, slug: t.slug, count: 0 });
     }
     return nameToId.get(name);
   };
@@ -184,6 +199,17 @@ async function main() {
     // ── correspondence ────────────────────────────────────────────────────
     const cs = row[C] || [];
     const rs = row[R] || [];
+
+    // Tally distinct items per person across both roles, before the
+    // creator×recipient pairing below (which only runs when both are present).
+    const onThisItem = new Set();
+    const asC = new Set(), asR = new Set();
+    for (const c of cs) { const n = canon(creators, c); if (n) { onThisItem.add(n); asC.add(n); } }
+    for (const r of rs) { const n = canon(recipients, r); if (n) { onThisItem.add(n); asR.add(n); } }
+    for (const n of onThisItem) personItems.set(n, (personItems.get(n) || 0) + 1);
+    for (const n of asC) personAsCreator.set(n, (personAsCreator.get(n) || 0) + 1);
+    for (const n of asR) personAsRecipient.set(n, (personAsRecipient.get(n) || 0) + 1);
+
     if (cs.length && rs.length) {
       withPair++;
       for (const c of cs) {
@@ -242,7 +268,15 @@ async function main() {
 
   await mkdir(DATA, { recursive: true });
 
-  const people = prune(peopleEdges, personTerms);
+  // Apply the scanned counts before pruning, so node labels and the searches
+  // they link to agree.
+  for (const t of personTerms.values()) {
+    t.count = personItems.get(t.name) ?? 0;
+    t.wrote = personAsCreator.get(t.name) ?? 0;
+    t.received = personAsRecipient.get(t.name) ?? 0;
+  }
+
+  const people = prune(peopleEdges, personTerms, { extra: (t) => [t.wrote, t.received] });
   const trPersonId = [...personTerms.entries()].find(([, t]) => /^Roosevelt, Theodore, 1858-1919$/.test(t.name))?.[0];
   const trIndex = people.nodes.findIndex((n) => n[0] === trPersonId);
 
@@ -250,8 +284,9 @@ async function main() {
     graph: 'people',
     label: 'Correspondence network',
     built: new Date().toISOString(),
-    fields: { nodes: ['id', 'name', 'slug', 'items', 'weight'], edges: ['a', 'b', 'letters'] },
+    fields: { nodes: ['id', 'name', 'slug', 'items', 'weight', 'wrote', 'received'], edges: ['a', 'b', 'letters'] },
     param: 'creator',
+    roleParams: { wrote: 'creator', received: 'recipient' },
     root: trIndex,
     scannedItems: items,
     ...people,

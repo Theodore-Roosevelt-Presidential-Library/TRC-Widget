@@ -17,7 +17,15 @@
     "graphs": "node scripts/graph.mjs",
     "build": "node scripts/build.mjs",
     "smoke": "node scripts/smoke.mjs",
-    "test": "node --test scripts/names.test.mjs scripts/graph.test.mjs && node scripts/smoke.mjs",
+    "test": "node scripts/build.mjs && node --test scripts/names.test.mjs scripts/graph.test.mjs scripts/render.test.mjs && node scripts/smoke.mjs",
     "serve": "node scripts/serve.mjs"
+  },
+  "devDependencies": {
+    "d3-drag": "^3.0.0",
+    "d3-force": "^3.0.0",
+    "d3-selection": "^3.0.0",
+    "d3-zoom": "^3.0.0",
+    "esbuild": "^0.28.1",
+    "jsdom": "^29.1.1"
   }
 }

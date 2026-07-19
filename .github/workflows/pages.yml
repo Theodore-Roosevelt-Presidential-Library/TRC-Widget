@@ -33,9 +33,14 @@ jobs:
       # Ship nothing that hasn't passed. The smoke test runs the widget's real
       # ranking algorithm against the real index, so a bad data refresh or a
       # regression in name handling stops the deploy rather than reaching users.
+      # Build-time dependencies only (esbuild, d3-*); shipped bundles have none.
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
       - name: Test
         run: |
-          node --test scripts/names.test.mjs scripts/graph.test.mjs
+          node scripts/build.mjs
+          node --test scripts/names.test.mjs scripts/graph.test.mjs scripts/render.test.mjs
           node scripts/harvest.mjs --head
           node scripts/smoke.mjs
 
