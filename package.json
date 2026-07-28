@@ -17,8 +17,9 @@
     "graphs": "node scripts/graph.mjs",
     "build": "node scripts/build.mjs",
     "smoke": "node scripts/smoke.mjs",
-    "test": "node scripts/build.mjs && node --test scripts/names.test.mjs scripts/graph.test.mjs scripts/render.test.mjs && node scripts/smoke.mjs",
-    "serve": "node scripts/serve.mjs"
+    "test": "node scripts/build.mjs && node --test scripts/names.test.mjs scripts/graph.test.mjs scripts/render.test.mjs scripts/topic.test.mjs && node scripts/smoke.mjs",
+    "serve": "node scripts/serve.mjs",
+    "topics": "node scripts/topics.mjs"
   },
   "devDependencies": {
     "d3-drag": "^3.0.0",

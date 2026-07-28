@@ -82,6 +82,58 @@ considerate.
 
 Emits `trc-filter` on the element whenever active filters change.
 
+## Topic breakdown
+
+A third widget — embed a subject by name and show how its items break down by
+format, each row deep-linking into that slice at the TR Center.
+
+```html
+<script src="https://trc.labs.trlibrary.com/trc-topic.min.js" defer></script>
+
+<trc-topic name="Conservation of natural resources"></trc-topic>
+```
+
+3.0 KB gzipped. Renders:
+
+```
+Conservation of natural resources        307 items
+  Letter               222
+  Magazine article      21
+  Cartoon               10
+  …
+  View all 307 at the TR Center ↗
+```
+
+| Attribute | Description |
+|---|---|
+| `name` | Subject to show. Case- and punctuation-insensitive |
+| `limit` | Rows before a "Show all" toggle. Default: all |
+| `heading` | `off` to omit the title (page already has one) |
+| `accent` / `theme` / `data-base` | As in the other widgets |
+
+Every count is precomputed from the item fingerprints and verified against the
+live site — Conservation → 10 cartoons, Hunting → 71, Panama → 68 reports all
+match `?subject=…&resource_type=…` exactly. The widget makes **no live calls**;
+only the click-through reaches the TR Center. Data is sharded by first letter
+(`data/topics/{a…z}.json`), so a topic loads one ~40 KB shard, browser-cached.
+
+## Theming to another site
+
+Every widget defaults to the TR Center palette. `theme="trlibrary"` restyles any
+of them to trlibrary.com — coral `#E7805D`, deep navy `#092A4D`, Clearface
+headings — with no other change to the embed:
+
+```html
+<trc-topic name="Hunting" theme="trlibrary"></trc-topic>
+<trc-search theme="trlibrary"></trc-search>
+<trc-graph theme="trlibrary"></trc-graph>
+```
+
+Themes live in one shared token block (`src/themes.js`) inlined into all three
+bundles, so a new site is a dozen lines in one place. Like the default, no
+webfonts are fetched — Clearface and Frutiger resolve when the host serves them
+(trlibrary.com does) and fall back cleanly otherwise.
+
 ## Relationship map
 
 A second, independent widget — an interactive map of how people and subjects

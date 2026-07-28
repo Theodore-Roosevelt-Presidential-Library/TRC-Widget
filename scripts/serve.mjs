@@ -32,7 +32,7 @@ createServer(async (req, res) => {
 
     // The demo page requests ./trc-search.js at the site root; in the repo it
     // lives in dist/. Map it so local dev matches the deployed layout.
-    if (rel === 'trc-search.js' || rel === 'trc-search.min.js') rel = `dist/${rel}`;
+    if (/^trc-(search|graph|topic)\.(min\.)?js$/.test(rel)) rel = `dist/${rel}`;
 
     const file = path.join(ROOT, rel);
     if (!file.startsWith(ROOT)) { res.writeHead(403).end('Forbidden'); return; }

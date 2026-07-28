@@ -21,6 +21,7 @@
  */
 
 import { buildSearchKey, normalize } from './names.mjs';
+import { THEMES } from './themes.js';
 
 const TRC = 'https://www.theodorerooseveltcenter.org';
 const API = `${TRC}/wp-json/wp/v2`;
@@ -147,6 +148,8 @@ input::placeholder{color:var(--trc-navy-soft);opacity:.75}
    --trc-line:#33404f;--trc-line-soft:#2a3441;
  }
 }
+
+${THEMES}
 `;
 
 /**

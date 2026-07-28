@@ -33,6 +33,7 @@ const kb = (n) => `${(n / 1024).toFixed(1)} KB`;
 const TARGETS = [
   { out: 'trc-search', entry: 'src/widget.js', tag: 'trc-search', desc: 'digital library search' },
   { out: 'trc-graph', entry: 'src/graph.js', tag: 'trc-graph', desc: 'digital library relationship map' },
+  { out: 'trc-topic', entry: 'src/topic.js', tag: 'trc-topic', desc: 'digital library topic breakdown' },
 ];
 
 /**

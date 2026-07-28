@@ -29,6 +29,7 @@
 
 import { select } from 'd3-selection';
 import { zoom, zoomIdentity } from 'd3-zoom';
+import { THEMES } from './themes.js';
 
 const TRC = 'https://www.theodorerooseveltcenter.org/digital-library/';
 
@@ -118,6 +119,8 @@ svg{touch-action:none}
    --trc-sage:#2c4a44;--trc-paper:#1a1f27;--trc-white:#141922;--trc-line:#33404f;
  }
 }
+
+${THEMES}
 `;
 
 /**

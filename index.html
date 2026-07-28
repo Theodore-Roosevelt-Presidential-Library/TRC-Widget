@@ -127,11 +127,43 @@
     the structure disappears. The people graph keeps him, because there he's the point.
   </div>
 
+  <h2>Topic breakdown</h2>
+  <p>A third widget: embed a subject by name and it shows how that subject's items break down
+  by format, each row opening that slice at the TR Center in a new tab. Fully precomputed, so
+  it makes no live calls until you click through.</p>
+
+<pre><code>&lt;script src="https://trc.labs.trlibrary.com/trc-topic.min.js" defer&gt;&lt;/script&gt;
+
+&lt;trc-topic name="Conservation of natural resources"&gt;&lt;/trc-topic&gt;</code></pre>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px">
+    <div class="demo" style="padding:0;overflow:hidden">
+      <trc-topic name="Conservation of natural resources" limit="6"></trc-topic>
+    </div>
+    <div class="demo" style="padding:0;overflow:hidden">
+      <trc-topic name="Panama Canal (Panama)" limit="6"></trc-topic>
+    </div>
+  </div>
+
+  <h2>Match your site</h2>
+  <p>Every widget defaults to the TR Center's palette. Add <code>theme="trlibrary"</code> to
+  restyle any of them to trlibrary.com — coral, deep navy, Clearface headings — without
+  touching the embed code otherwise.</p>
+
+<pre><code>&lt;trc-topic name="Hunting" theme="trlibrary"&gt;&lt;/trc-topic&gt;
+&lt;trc-search theme="trlibrary"&gt;&lt;/trc-search&gt;
+&lt;trc-graph theme="trlibrary"&gt;&lt;/trc-graph&gt;</code></pre>
+
+  <div class="demo" style="padding:0;overflow:hidden;margin-top:14px;max-width:360px">
+    <trc-topic name="Hunting" theme="trlibrary" limit="6"></trc-topic>
+  </div>
+
   <h2>How it works</h2>
   <p>Autocomplete runs entirely against a static index built weekly from the Center's public
   WordPress API and served from GitHub Pages — so typing costs their servers nothing, and
   suggestions keep working even when the archive itself is slow or down. Result counts and
-  previews are fetched live, and fail quietly when unavailable.</p>
+  previews are fetched live, and fail quietly when unavailable. The relationship map and topic
+  breakdowns are fully precomputed and make no live calls at all until you click through.</p>
 
   <footer>
     <a href="https://github.com/mbriney/TRC-Widget">Source on GitHub</a> ·
@@ -141,5 +173,6 @@
 </div>
 <script src="./trc-search.js" defer></script>
 <script src="./trc-graph.js" defer></script>
+<script src="./trc-topic.js" defer></script>
 </body>
 </html>
