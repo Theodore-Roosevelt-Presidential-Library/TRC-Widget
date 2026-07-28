@@ -179,6 +179,7 @@
         <select id="gen-theme">
           <option value="">TR Center</option>
           <option value="trlibrary">trlibrary.com</option>
+          <option value="trlibrary-dark">trlibrary.com (green)</option>
         </select>
       </label>
       <label class="gen-check">
@@ -225,6 +226,24 @@
 
   <div class="demo" style="padding:0;overflow:hidden;margin-top:14px;max-width:360px">
     <trc-topic name="Hunting" theme="trlibrary" limit="6"></trc-topic>
+  </div>
+
+  <h3 style="margin-top:30px">On a dark section</h3>
+  <p><code>theme="trlibrary-dark"</code> renders white on TRPL's forest green, sized to drop
+  straight into a "From the Archives"-style column. The widget carries its own green, so it
+  sits seamlessly whether the surrounding section is green or not.</p>
+
+<pre><code>&lt;trc-topic name="Conservation of natural resources" theme="trlibrary-dark" heading="off"&gt;&lt;/trc-topic&gt;</code></pre>
+
+  <div style="background:#1B4633;border-radius:5px;padding:26px 30px;margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:30px">
+    <div>
+      <div style="font-family:'Dharma Gothic E','Oswald','Arial Narrow',sans-serif;text-transform:uppercase;font-weight:700;font-size:30px;color:#fff;line-height:1.04;margin-bottom:10px">From the Archives</div>
+      <trc-topic name="Conservation of natural resources" theme="trlibrary-dark" heading="off" limit="6"></trc-topic>
+    </div>
+    <div>
+      <div style="font-family:'Dharma Gothic E','Oswald','Arial Narrow',sans-serif;text-transform:uppercase;font-weight:700;font-size:30px;color:#fff;line-height:1.04;margin-bottom:10px">John Muir</div>
+      <trc-topic name="Muir, John, 1838-1914" theme="trlibrary-dark" heading="off" limit="6"></trc-topic>
+    </div>
   </div>
 
   <h2>How it works</h2>
@@ -362,7 +381,13 @@
     copyBtn.textContent = 'Copy snippet';
     copyBtn.classList.remove('done');
 
-    // Live preview: build a real <trc-topic> from the same attributes.
+    // Live preview: build a real <trc-topic> from the same attributes. The
+    // green theme paints white text on its own dark surface, so give the preview
+    // panel a matching backdrop (and a little padding) or it renders invisibly.
+    const green = themeEl.value === 'trlibrary-dark';
+    preview.style.background = green ? '#1B4633' : '';
+    preview.style.padding = green ? '16px' : '';
+    preview.style.borderRadius = green ? '4px' : '';
     preview.innerHTML = '';
     const el = document.createElement('trc-topic');
     el.setAttribute('name', picked.name);

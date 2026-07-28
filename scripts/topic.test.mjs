@@ -140,3 +140,20 @@ test('the trlibrary theme is available and applies', { skip: !ready && why }, as
   assert.match(css, /#E7805D/, 'trlibrary coral token missing');
   assert.match(css, /Clearface/, 'trlibrary heading font missing');
 });
+
+test('the trlibrary-dark (green) theme is available and still functions', { skip: !ready && why }, async () => {
+  // White-on-green for TRPL's editorial columns. Content and links must be
+  // identical to any other theme — only the skin changes.
+  const { sr } = await mount({ name: 'Conservation of natural resources', theme: 'trlibrary-dark', heading: 'off' });
+  assert.equal(sr.host.getAttribute('theme'), 'trlibrary-dark');
+
+  const rows = [...sr.querySelectorAll('a.row')];
+  assert.ok(rows.length > 0, 'green-themed widget still lists formats');
+  assert.ok(rows.every((a) => a.getAttribute('target') === '_blank'), 'rows still open in a new tab');
+  assert.match(sr.querySelector('a.all').getAttribute('href'), /subject=conservation-of-natural-resources/);
+
+  const css = sr.querySelector('style').textContent;
+  assert.match(css, /\[theme=trlibrary-dark\][\s\S]*#1B4633/, 'the forest-green surface token must ship');
+  assert.match(css, /\[theme=trlibrary-dark\]\)\s+h3[\s\S]*uppercase/, 'green heading should be uppercased');
+  assert.match(css, /Dharma Gothic E/, 'green theme should declare the TRPL display font');
+});

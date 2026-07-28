@@ -129,6 +129,16 @@ headings — with no other change to the embed:
 <trc-graph theme="trlibrary"></trc-graph>
 ```
 
+For TRPL's dark editorial columns (the "From the Archives" block), `theme="trlibrary-dark"`
+renders white on their forest green `#1B4633`, with the uppercase Dharma Gothic heading and
+underlined links that match the neighbouring columns. The widget carries its own green, so it
+drops into a green section seamlessly or stands alone:
+
+```html
+<trc-topic name="Conservation of natural resources"
+           theme="trlibrary-dark" heading="off"></trc-topic>
+```
+
 Themes live in one shared token block (`src/themes.js`) inlined into all three
 bundles, so a new site is a dozen lines in one place. Like the default, no
 webfonts are fetched — Clearface and Frutiger resolve when the host serves them
