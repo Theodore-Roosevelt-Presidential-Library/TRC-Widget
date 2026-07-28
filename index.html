@@ -34,6 +34,34 @@
   .sw div{font-size:11px;padding:26px 10px 6px;border-radius:5px;border:1px solid var(--line);min-width:104px}
   footer{margin-top:72px;padding-top:22px;border-top:1px solid var(--line);color:var(--navy-soft);font-size:15px}
   a{color:var(--rust)}
+
+  /* Embed generator */
+  .gen-h{margin-top:34px}
+  .gen{background:#fff;border:1px solid var(--line);border-radius:5px;padding:18px}
+  .gen-find{position:relative;margin-bottom:14px}
+  #gen-input{width:100%;height:44px;padding:0 14px;font:inherit;font-size:16px;color:var(--navy);background:#fff;border:1px solid var(--line);border-radius:5px;outline:none}
+  #gen-input:focus{border-color:var(--rust);box-shadow:0 0 0 3px rgba(188,76,1,.14)}
+  .gen-hits{position:absolute;left:0;right:0;top:48px;z-index:30;background:#fff;border:1px solid var(--line);border-radius:5px;box-shadow:0 8px 24px rgba(19,46,82,.16);max-height:300px;overflow-y:auto}
+  .gen-hits button{display:flex;justify-content:space-between;gap:12px;width:100%;padding:9px 14px;font:inherit;font-size:14px;text-align:left;background:none;border:0;border-top:1px solid var(--line);cursor:pointer;color:var(--navy)}
+  .gen-hits button:first-child{border-top:0}
+  .gen-hits button:hover,.gen-hits button.on{background:var(--paper)}
+  .gen-hits .g-c{color:var(--navy-soft);font-size:13px;flex:none;font-variant-numeric:tabular-nums}
+  .gen-hits .g-none{padding:10px 14px;color:var(--navy-soft);font-size:14px}
+  .gen-opts{display:flex;flex-wrap:wrap;gap:18px;align-items:center;margin-bottom:16px;font-size:14px;color:var(--navy-soft)}
+  .gen-opts label{display:inline-flex;align-items:center;gap:7px}
+  .gen-opts input[type=number],.gen-opts select{font:inherit;font-size:14px;height:32px;padding:0 8px;border:1px solid var(--line);border-radius:4px;background:#fff;color:var(--navy)}
+  .gen-check{cursor:pointer}
+  .gen-out{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .gen-lbl{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--navy-soft);margin-bottom:6px}
+  .gen-code{background:var(--navy);color:#eaeef4;padding:14px;border-radius:5px;margin:0;white-space:pre-wrap;word-break:break-word;min-height:96px;font-size:13px;line-height:1.5}
+  .gen-hint{color:var(--navy-soft)}
+  .gen-code .gen-hint{color:#8ea3bd}
+  .gen-copy{margin-top:8px;font:inherit;font-size:13px;padding:7px 14px;border:1px solid var(--rust);background:var(--rust);color:#fff;border-radius:4px;cursor:pointer}
+  .gen-copy:hover{background:#a03e00}
+  .gen-copy.done{background:#2f7d4f;border-color:#2f7d4f}
+  .gen-preview{min-height:96px}
+  .gen-preview .gen-hint{display:block;padding:12px 0}
+  @media(max-width:640px){.gen-out{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -132,6 +160,47 @@
   by format, each row opening that slice at the TR Center in a new tab. Fully precomputed, so
   it makes no live calls until you click through.</p>
 
+  <h3 class="gen-h">Build your embed</h3>
+  <p>Search for a subject, adjust the options, and copy the snippet.</p>
+
+  <div class="gen">
+    <div class="gen-find">
+      <input id="gen-input" type="text" autocomplete="off" spellcheck="false"
+             placeholder="Search subjects — try “conservation”, “hunting”, “panama”…"
+             aria-label="Search for a subject">
+      <div id="gen-hits" class="gen-hits" hidden></div>
+    </div>
+
+    <div class="gen-opts">
+      <label>Rows
+        <input id="gen-limit" type="number" min="1" placeholder="all" style="width:64px">
+      </label>
+      <label>Theme
+        <select id="gen-theme">
+          <option value="">TR Center</option>
+          <option value="trlibrary">trlibrary.com</option>
+        </select>
+      </label>
+      <label class="gen-check">
+        <input id="gen-heading" type="checkbox" checked> Show title
+      </label>
+    </div>
+
+    <div class="gen-out">
+      <div class="gen-col">
+        <div class="gen-lbl">Snippet</div>
+        <pre id="gen-code" class="gen-code"><span class="gen-hint">Pick a subject above to generate your embed code.</span></pre>
+        <button id="gen-copy" class="gen-copy" hidden>Copy snippet</button>
+      </div>
+      <div class="gen-col">
+        <div class="gen-lbl">Live preview</div>
+        <div id="gen-preview" class="gen-preview"><span class="gen-hint">Preview appears here.</span></div>
+      </div>
+    </div>
+  </div>
+
+  <p style="margin-top:26px">The finished embed is just two lines:</p>
+
 <pre><code>&lt;script src="https://trc.labs.trlibrary.com/trc-topic.min.js" defer&gt;&lt;/script&gt;
 
 &lt;trc-topic name="Conservation of natural resources"&gt;&lt;/trc-topic&gt;</code></pre>
@@ -174,5 +243,149 @@
 <script src="./trc-search.js" defer></script>
 <script src="./trc-graph.js" defer></script>
 <script src="./trc-topic.js" defer></script>
+
+<script>
+/* Interactive topic-embed generator.
+ *
+ * Reuses the same first-letter topic shards the <trc-topic> widget loads, so its
+ * autocomplete covers every subject in the archive with no extra data files. It
+ * resolves a subject exactly as the widget does — normalise, load one shard,
+ * look up — then writes the matching embed snippet and a live preview. */
+(function () {
+  const norm = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+  const $ = (id) => document.getElementById(id);
+  const input = $('gen-input');
+  const hits = $('gen-hits');
+  const codeEl = $('gen-code');
+  const copyBtn = $('gen-copy');
+  const preview = $('gen-preview');
+  const limitEl = $('gen-limit');
+  const themeEl = $('gen-theme');
+  const headingEl = $('gen-heading');
+
+  const shardCache = new Map();
+  let picked = null;        // { name, slug } of the chosen subject
+  let matches = [];
+  let cursor = -1;
+
+  async function loadShard(letter) {
+    const key = /[a-z]/.test(letter) ? letter : '_';
+    if (!shardCache.has(key)) {
+      shardCache.set(key, fetch(`./data/topics/${key}.json`)
+        .then((r) => (r.ok ? r.json() : { subjects: {} }))
+        .catch(() => ({ subjects: {} })));
+    }
+    return shardCache.get(key);
+  }
+
+  async function search(q) {
+    const nq = norm(q);
+    if (!nq) return [];
+    const { subjects } = await loadShard(nq[0]);
+    const out = [];
+    for (const [key, s] of Object.entries(subjects || {})) {
+      const at = key.indexOf(nq);
+      if (at === -1) continue;
+      // Word-boundary: "hunt" matches "Hunting", not "Manhunt".
+      if (at > 0 && key[at - 1] !== ' ') continue;
+      out.push(s);
+    }
+    return out.sort((a, b) => b.total - a.total).slice(0, 8);
+  }
+
+  function renderHits() {
+    if (!matches.length) {
+      hits.innerHTML = `<div class="g-none">No matching subject. Try fewer or different words.</div>`;
+      hits.hidden = false;
+      return;
+    }
+    hits.innerHTML = matches.map((s, i) =>
+      `<button data-i="${i}" class="${i === cursor ? 'on' : ''}">
+        <span>${escapeHtml(s.name)}</span>
+        <span class="g-c">${s.total.toLocaleString()}</span>
+      </button>`).join('');
+    hits.querySelectorAll('button').forEach((b) => {
+      b.addEventListener('mousedown', (e) => { e.preventDefault(); choose(matches[+b.dataset.i]); });
+    });
+    hits.hidden = false;
+  }
+
+  const escapeHtml = (s) => String(s).replace(/[&<>"]/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  let seq = 0;
+  input.addEventListener('input', async () => {
+    const q = input.value;
+    const mine = ++seq;
+    if (!q.trim()) { hits.hidden = true; return; }
+    const found = await search(q);
+    if (mine !== seq) return;   // a later keystroke already superseded this one
+    matches = found; cursor = -1;
+    renderHits();
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if (hits.hidden) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); cursor = Math.min(cursor + 1, matches.length - 1); renderHits(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); cursor = Math.max(cursor - 1, 0); renderHits(); }
+    else if (e.key === 'Enter' && cursor >= 0) { e.preventDefault(); choose(matches[cursor]); }
+    else if (e.key === 'Escape') { hits.hidden = true; }
+  });
+  input.addEventListener('blur', () => setTimeout(() => { hits.hidden = true; }, 150));
+
+  function choose(s) {
+    picked = s;
+    input.value = s.name;
+    hits.hidden = true;
+    update();
+  }
+
+  [limitEl, themeEl, headingEl].forEach((el) => el.addEventListener('input', update));
+
+  function attrs() {
+    const a = [`name="${picked.name.replace(/"/g, '&quot;')}"`];
+    const lim = parseInt(limitEl.value, 10);
+    if (Number.isFinite(lim) && lim > 0) a.push(`limit="${lim}"`);
+    if (themeEl.value) a.push(`theme="${themeEl.value}"`);
+    if (!headingEl.checked) a.push('heading="off"');
+    return a.join(' ');
+  }
+
+  function update() {
+    if (!picked) return;
+    const script = '<script src="https://trc.labs.trlibrary.com/trc-topic.min.js" defer><\/script>';
+    const tag = `<trc-topic ${attrs()}></trc-topic>`;
+    codeEl.textContent = `${script}\n\n${tag}`;
+    copyBtn.hidden = false;
+    copyBtn.textContent = 'Copy snippet';
+    copyBtn.classList.remove('done');
+
+    // Live preview: build a real <trc-topic> from the same attributes.
+    preview.innerHTML = '';
+    const el = document.createElement('trc-topic');
+    el.setAttribute('name', picked.name);
+    const lim = parseInt(limitEl.value, 10);
+    if (Number.isFinite(lim) && lim > 0) el.setAttribute('limit', String(lim));
+    if (themeEl.value) el.setAttribute('theme', themeEl.value);
+    if (!headingEl.checked) el.setAttribute('heading', 'off');
+    preview.appendChild(el);
+  }
+
+  copyBtn.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(codeEl.textContent);
+      copyBtn.textContent = 'Copied ✓';
+      copyBtn.classList.add('done');
+      setTimeout(() => { copyBtn.textContent = 'Copy snippet'; copyBtn.classList.remove('done'); }, 1800);
+    } catch {
+      // Clipboard API needs a secure context; select the text as a fallback.
+      const r = document.createRange(); r.selectNodeContents(codeEl);
+      const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    }
+  });
+})();
+</script>
 </body>
 </html>

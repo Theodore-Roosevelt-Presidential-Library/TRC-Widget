@@ -277,6 +277,33 @@ his father, correctly distinguished by life dates. Stripping those dates for
 display made three men render as one name — our bug, not theirs, and the reason
 labels now restore the birth year whenever a name would otherwise collide.
 
+## Being a good guest — gentle harvesting
+
+The Center runs on WP Engine, which returns 502/504 gateway timeouts when a query
+outlasts its limit. A harvest that retries hard on those makes a struggling server
+worse. After a run died on repeated 504s at `dl_creator` page 2, three changes
+(all in `scripts/http.mjs`, shared by both harvesters):
+
+**No forced `orderby=id` on taxonomy pages.** That made the database sort the
+whole 40k-term taxonomy on every request — the actual timeout cause. The REST
+default is an indexed name sort, cheap and stable enough to resume against.
+(The fingerprint harvest keeps `orderby=id` because there it sorts on the posts'
+clustered primary key, which is free, and it needs the stable order.)
+
+**Smaller taxonomy pages (100 → 50).** Half the per-query work, so each request
+is far likelier to finish under their gateway timeout. More requests, each
+lighter — which is what matters to them.
+
+**Adaptive pacing.** Every retry raises the delay between *all* requests; a run
+of clean responses eases it back toward a 500ms floor (8s ceiling). One rough
+patch quiets the whole harvest instead of triggering a burst of retries. Backoff
+is jittered, capped at a minute, and honours any `Retry-After` header.
+
+Verified live: the pages that were 504ing now come back clean with the pace never
+leaving its floor. The tradeoff is time — a full taxonomy harvest is ~25 min
+rather than ~19, comfortably inside the Action's 120-min budget — in exchange for
+never being the reason their site is slow.
+
 ## Widget roadmap
 
 | Widget | Data needed | Status |

@@ -25,6 +25,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildSearchKey, extractDates, decodeEntities } from './names.mjs';
+import { fetchGentle, sleep, currentPace, ok } from './http.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -60,12 +61,16 @@ const HEAD_SIZE = 1000;
 
 // --- tuning -----------------------------------------------------------------
 // Deliberately gentle. This is someone else's server and we are a guest on it.
-const PER_PAGE = 100;          // WP REST maximum
-const DELAY_MS = 250;          // pause between successful requests
-const MAX_RETRIES = 6;
-const BASE_BACKOFF_MS = 1000;  // doubles each retry: 1s, 2s, 4s, 8s, 16s, 32s
-const USER_AGENT =
-  'TRC-Widget-Harvester/1.0 (+https://github.com/mbriney/TRC-Widget) - caching public taxonomy data for an embeddable search widget';
+// The patient-retry and adaptive-pacing logic lives in http.mjs, shared with
+// the fingerprint harvester. Two facet-harvest specifics:
+//
+//   - Smaller pages: a per_page=50 query is roughly half the DB work of 100, so
+//     it's far likelier to finish under WP Engine's gateway timeout. Twice as
+//     many requests, but each one lighter — which is what matters to them.
+//   - No orderby (set in the request URL below): the REST default is an indexed
+//     name sort. Forcing orderby=id made the database sort the whole taxonomy on
+//     every page, the likely cause of the 504s.
+const PER_PAGE = 50;
 
 // --- args -------------------------------------------------------------------
 const args = process.argv.slice(2);
@@ -80,47 +85,11 @@ const FRESH = flag('fresh');
 const DRY_RUN = flag('dry-run');
 
 // --- helpers ----------------------------------------------------------------
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
 function log(...a) {
   console.log(`[${new Date().toISOString().slice(11, 19)}]`, ...a);
 }
 
-/**
- * Fetch with retry and exponential backoff.
- *
- * We retry on 5xx and 429 specifically because this host is *known* to throw
- * intermittent 502s under load. A transient 502 is expected, not exceptional,
- * so we treat it as a normal part of the control flow rather than a failure.
- */
-async function fetchWithRetry(url, attempt = 0) {
-  try {
-    const res = await fetch(url, {
-      headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
-    });
-
-    if (res.ok) return res;
-
-    const retryable = res.status >= 500 || res.status === 429;
-    if (retryable && attempt < MAX_RETRIES) {
-      const wait = BASE_BACKOFF_MS * 2 ** attempt;
-      log(`  ${res.status} on ${new URL(url).search} — retry ${attempt + 1}/${MAX_RETRIES} in ${wait}ms`);
-      await sleep(wait);
-      return fetchWithRetry(url, attempt + 1);
-    }
-
-    throw new Error(`HTTP ${res.status} ${res.statusText} for ${url}`);
-  } catch (err) {
-    // Network-level failure (DNS, socket reset) — also worth retrying.
-    if (attempt < MAX_RETRIES && !err.message.startsWith('HTTP ')) {
-      const wait = BASE_BACKOFF_MS * 2 ** attempt;
-      log(`  ${err.message} — retry ${attempt + 1}/${MAX_RETRIES} in ${wait}ms`);
-      await sleep(wait);
-      return fetchWithRetry(url, attempt + 1);
-    }
-    throw err;
-  }
-}
+const fetchWithRetry = (url) => fetchGentle(url, { onRetry: (m) => log(`  ${m}`) });
 
 /**
  * Read the term count from X-WP-Total.
@@ -178,14 +147,18 @@ async function harvestTaxonomy(tax) {
   let page = checkpoint?.nextPage ?? 1;
 
   while (page <= totalPages) {
+    // No orderby: the REST default is an indexed name sort, which is cheap and
+    // stable enough for resuming (terms rarely change mid-harvest). Forcing
+    // orderby=id made the DB sort the whole taxonomy on every page — the likely
+    // cause of the 504s.
     const url =
-      `${API}/${tax.slug}?per_page=${PER_PAGE}&page=${page}` +
-      `&orderby=id&order=asc&_fields=id,name,slug,count`;
+      `${API}/${tax.slug}?per_page=${PER_PAGE}&page=${page}&_fields=id,name,slug,count`;
 
     let batch;
     try {
       const res = await fetchWithRetry(url);
       batch = await res.json();
+      ok();   // a stretch of clean requests eases the pace back down
     } catch (err) {
       // A full run takes over an hour. Terms can be added or removed on their
       // end while we're paginating, which shifts the page count under us and
@@ -211,14 +184,16 @@ async function harvestTaxonomy(tax) {
 
     terms.push(...batch);
 
+    // Checkpoint often — pages are half the size now, and a rough patch on
+    // their end can end the run at any point. Cheap local writes buy resumability.
     if (page % 10 === 0 || page === totalPages) {
       const pct = Math.round((page / totalPages) * 100);
-      log(`  ${tax.slug} ${page}/${totalPages} (${pct}%) — ${terms.length.toLocaleString()} terms`);
+      log(`  ${tax.slug} ${page}/${totalPages} (${pct}%) — ${terms.length.toLocaleString()} terms, pace ${currentPace()}ms`);
       await saveCheckpoint(tax.slug, { nextPage: page + 1, terms });
     }
 
     page += 1;
-    await sleep(DELAY_MS);
+    await sleep(currentPace());
   }
 
   await clearCheckpoint(tax.slug);
