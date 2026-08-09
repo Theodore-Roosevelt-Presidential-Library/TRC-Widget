@@ -1,61 +1,61 @@
 {
   "source": "https://www.theodorerooseveltcenter.org/wp-json/wp/v2",
-  "harvested": "2026-08-02T09:27:33.096Z",
-  "durationSeconds": 2224,
+  "harvested": "2026-08-09T08:59:17.049Z",
+  "durationSeconds": 2598,
   "taxonomies": [
     {
       "taxonomy": "dl_creator",
       "label": "Creator",
       "file": "creators.json",
-      "total": 18997,
-      "bytes": 3040463,
+      "total": 19091,
+      "bytes": 3059645,
       "topTerm": {
         "name": "Roosevelt, Theodore, 1858-1919",
-        "count": 47776
+        "count": 58644
       }
     },
     {
       "taxonomy": "dl_recipient",
       "label": "Recipient",
       "file": "recipients.json",
-      "total": 35379,
-      "bytes": 4579905,
+      "total": 35646,
+      "bytes": 4612719,
       "topTerm": {
         "name": "Roosevelt, Theodore, 1858-1919",
-        "count": 29318
+        "count": 30894
       }
     },
     {
       "taxonomy": "dl_subject",
       "label": "Subject",
       "file": "subjects.json",
-      "total": 39921,
-      "bytes": 5049659,
+      "total": 40274,
+      "bytes": 5092531,
       "topTerm": {
         "name": "Roosevelt, Theodore, 1858-1919",
-        "count": 9961
+        "count": 18434
       }
     },
     {
       "taxonomy": "dl_collection",
       "label": "Collection",
       "file": "collections.json",
-      "total": 2,
-      "bytes": 415,
+      "total": 52,
+      "bytes": 6175,
       "topTerm": {
         "name": "Library of Congress Manuscript Division",
-        "count": 103727
+        "count": 120742
       }
     },
     {
       "taxonomy": "dl_resource_type",
       "label": "Type",
       "file": "resource-types.json",
-      "total": 71,
-      "bytes": 3921,
+      "total": 121,
+      "bytes": 6785,
       "topTerm": {
         "name": "Letter",
-        "count": 94793
+        "count": 109521
       }
     },
     {
@@ -63,21 +63,21 @@
       "label": "Production",
       "file": "production-methods.json",
       "total": 5,
-      "bytes": 386,
+      "bytes": 388,
       "topTerm": {
         "name": "Typed",
-        "count": 85723
+        "count": 100319
       }
     },
     {
       "taxonomy": "dl_publication",
       "label": "Publication",
       "file": "publications.json",
-      "total": 224,
-      "bytes": 27861,
+      "total": 2160,
+      "bytes": 247779,
       "topTerm": {
-        "name": "The commercial advertiser (New York, N.Y. : 1895-1904)",
-        "count": 22
+        "name": "Theodore Roosevelt Association Journal",
+        "count": 1750
       }
     }
   ]
