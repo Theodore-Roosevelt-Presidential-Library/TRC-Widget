@@ -1,39 +1,39 @@
 {
   "source": "https://www.theodorerooseveltcenter.org/wp-json/wp/v2",
-  "harvested": "2026-08-09T08:59:17.049Z",
-  "durationSeconds": 2598,
+  "harvested": "2026-08-16T08:38:44.472Z",
+  "durationSeconds": 1837,
   "taxonomies": [
     {
       "taxonomy": "dl_creator",
       "label": "Creator",
       "file": "creators.json",
-      "total": 19091,
-      "bytes": 3059645,
+      "total": 19180,
+      "bytes": 3077110,
       "topTerm": {
         "name": "Roosevelt, Theodore, 1858-1919",
-        "count": 58644
+        "count": 58821
       }
     },
     {
       "taxonomy": "dl_recipient",
       "label": "Recipient",
       "file": "recipients.json",
-      "total": 35646,
-      "bytes": 4612719,
+      "total": 35790,
+      "bytes": 4639504,
       "topTerm": {
         "name": "Roosevelt, Theodore, 1858-1919",
-        "count": 30894
+        "count": 30971
       }
     },
     {
       "taxonomy": "dl_subject",
       "label": "Subject",
       "file": "subjects.json",
-      "total": 40274,
-      "bytes": 5092531,
+      "total": 40314,
+      "bytes": 5096323,
       "topTerm": {
         "name": "Roosevelt, Theodore, 1858-1919",
-        "count": 18434
+        "count": 18511
       }
     },
     {
@@ -44,7 +44,7 @@
       "bytes": 6175,
       "topTerm": {
         "name": "Library of Congress Manuscript Division",
-        "count": 120742
+        "count": 121083
       }
     },
     {
@@ -55,7 +55,7 @@
       "bytes": 6785,
       "topTerm": {
         "name": "Letter",
-        "count": 109521
+        "count": 109833
       }
     },
     {
@@ -66,15 +66,15 @@
       "bytes": 388,
       "topTerm": {
         "name": "Typed",
-        "count": 100319
+        "count": 100595
       }
     },
     {
       "taxonomy": "dl_publication",
       "label": "Publication",
       "file": "publications.json",
-      "total": 2160,
-      "bytes": 247779,
+      "total": 2161,
+      "bytes": 247889,
       "topTerm": {
         "name": "Theodore Roosevelt Association Journal",
         "count": 1750
