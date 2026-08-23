@@ -1,39 +1,39 @@
 {
   "source": "https://www.theodorerooseveltcenter.org/wp-json/wp/v2",
-  "harvested": "2026-08-16T08:38:44.472Z",
-  "durationSeconds": 1837,
+  "harvested": "2026-08-23T08:38:05.758Z",
+  "durationSeconds": 1778,
   "taxonomies": [
     {
       "taxonomy": "dl_creator",
       "label": "Creator",
       "file": "creators.json",
-      "total": 19180,
-      "bytes": 3077110,
+      "total": 19221,
+      "bytes": 3084622,
       "topTerm": {
         "name": "Roosevelt, Theodore, 1858-1919",
-        "count": 58821
+        "count": 58968
       }
     },
     {
       "taxonomy": "dl_recipient",
       "label": "Recipient",
       "file": "recipients.json",
-      "total": 35790,
-      "bytes": 4639504,
+      "total": 35903,
+      "bytes": 4657906,
       "topTerm": {
         "name": "Roosevelt, Theodore, 1858-1919",
-        "count": 30971
+        "count": 31001
       }
     },
     {
       "taxonomy": "dl_subject",
       "label": "Subject",
       "file": "subjects.json",
-      "total": 40314,
-      "bytes": 5096323,
+      "total": 40336,
+      "bytes": 5098548,
       "topTerm": {
         "name": "Roosevelt, Theodore, 1858-1919",
-        "count": 18511
+        "count": 18569
       }
     },
     {
@@ -44,7 +44,7 @@
       "bytes": 6175,
       "topTerm": {
         "name": "Library of Congress Manuscript Division",
-        "count": 121083
+        "count": 121317
       }
     },
     {
@@ -55,7 +55,7 @@
       "bytes": 6785,
       "topTerm": {
         "name": "Letter",
-        "count": 109833
+        "count": 110058
       }
     },
     {
@@ -66,7 +66,7 @@
       "bytes": 388,
       "topTerm": {
         "name": "Typed",
-        "count": 100595
+        "count": 100813
       }
     },
     {
